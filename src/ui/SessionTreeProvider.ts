@@ -314,7 +314,9 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<AgentNode | 
     activeId: string | null,
   ): SessionTreeItem {
     const label = info.title?.trim() || shortSessionId(info.sessionId);
-    const description = relativeTime(info.updatedAt);
+    const description = info.sessionId === activeId
+      ? 'active'
+      : relativeTime(info.updatedAt);
     const tooltip = buildSessionTooltip(agentName, info.sessionId, info.cwd, info.updatedAt, 'agent');
     return new SessionTreeItem(
       agentName,
@@ -417,7 +419,9 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<AgentNode | 
     const label = (entry.title?.trim())
       || (entry.firstPrompt?.trim() && truncate(entry.firstPrompt!.trim(), 60))
       || shortSessionId(entry.sessionId);
-    const description = relativeTime(entry.lastActiveAt);
+    const description = entry.sessionId === activeId
+      ? 'active'
+      : relativeTime(entry.lastActiveAt);
     const tooltip = buildSessionTooltip(
       entry.agentName,
       entry.sessionId,

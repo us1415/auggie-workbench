@@ -380,6 +380,21 @@ Edits controls pass on 2026-07-04:
   - `cmd /c npm run lint` passed.
 - Needs dev-host smoke test: create/modify a disposable file, verify it appears in Edits, expand preview, test `Keep All` as a no-op/refresh, and test `Discard` or `Discard All` only on disposable changes.
 
+Session tree usability pass on 2026-07-04:
+
+- Work branch: `auggie-session-tree`, stacked on `auggie-edits-controls`.
+- Existing session tree support was already present:
+  - Threads tree under the Auggie activity bar.
+  - Agent-sourced `session/list` when supported.
+  - Local session-history fallback when only `session/load` or `session/resume` is available.
+  - `acp.openSession` to load/resume older threads.
+- This pass adds a dedicated `Auggie: Open Latest Thread` command and exposes it as a Threads toolbar history action.
+- Active thread rows now show `active` in the Threads tree description instead of an age timestamp.
+- Verification after this pass:
+  - `cmd /c npm run compile` passed.
+  - `cmd /c npm run lint` passed.
+- Needs dev-host smoke test: use the Threads view toolbar history action, expand Auggie under Threads, confirm recent threads are listed, open an older thread, and confirm the active row changes to `active`.
+
 ## Known Issues / Watch Items
 
 - Need user smoke test after each F5 dev-host restart.
@@ -421,6 +436,9 @@ Edits controls pass on 2026-07-04:
    - smoke test command activity details in the Extension Development Host
    - smoke test file read/search card summaries in the Extension Development Host
    - keep terminal selection/output as a later low-priority convenience
+6. Session tree:
+   - smoke test Threads view recent sessions and `Open Latest Thread` toolbar action
+   - smoke test opening older threads from the tree
 6. Continue context-menu parity:
    - make Files/Folders nested in-webview lists if feasible
    - decide what Default Context and Rules should really include

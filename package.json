@@ -99,6 +99,11 @@
         "title": "Auggie: Open Chat"
       },
       {
+        "command": "acp.openLatestThread",
+        "title": "Auggie: Open Latest Thread",
+        "icon": "$(history)"
+      },
+      {
         "command": "acp.addAgent",
         "title": "Auggie: Configure Launch Command",
         "icon": "$(add)"
@@ -192,6 +197,11 @@
           "command": "acp.refreshAgents",
           "when": "view == acp-sessions",
           "group": "navigation@3"
+        },
+        {
+          "command": "acp.openLatestThread",
+          "when": "view == acp-sessions",
+          "group": "navigation@2"
         },
         {
           "command": "acp.browseRegistry",

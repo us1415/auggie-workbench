@@ -27,8 +27,9 @@ Public references:
 
 ## 3. Thread And Session Flow
 
-- [ ] Show recent conversations in the Threads tree.
-- [ ] Let user open older conversations from the tree.
+- [x] Show recent conversations in the Threads tree.
+- [x] Let user open older conversations from the tree.
+- [ ] Smoke test Threads tree recent/open-latest/open-older flows in the Extension Development Host.
 - [x] Add warning before starting a new conversation.
 - [ ] Make restart/open latest behavior reliable after VS Code reload.
 - [ ] Decide how to represent missing ACP capabilities, especially resume/list/load differences.

@@ -282,6 +282,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     await openLatestAuggieThread({ showProgress: true });
   });
 
+  const openLatestThreadCmd = vscode.commands.registerCommand('acp.openLatestThread', async () => {
+    await openLatestAuggieThread({ showProgress: true });
+    sessionTreeProvider.invalidate(AUGGIE_AGENT_NAME);
+  });
+
   // New Conversation (disconnect + clear chat + reconnect same agent)
   const newConversationCmd = vscode.commands.registerCommand('acp.newConversation', async (opts?: { skipConfirm?: boolean }) => {
     const activeSession = sessionManager.getActiveSession();
@@ -623,6 +628,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     statusBarManager,
     connectAgentCmd,
     connectAuggieCmd,
+    openLatestThreadCmd,
     newConversationCmd,
     disconnectAgentCmd,
     openChatCmd,
