@@ -41,6 +41,8 @@
     const editsAddCount = document.getElementById('editsAddCount');
     const editsDeleteCount = document.getElementById('editsDeleteCount');
     const editsProgress = document.getElementById('editsProgress');
+    const editsKeepAllBtn = document.getElementById('editsKeepAllBtn');
+    const editsDiscardAllBtn = document.getElementById('editsDiscardAllBtn');
     const editsList = document.getElementById('editsList');
     const editsEmptyState = document.getElementById('editsEmptyState');
 
@@ -370,6 +372,8 @@
           added: Number.isFinite(file.added) ? file.added : 0,
           removed: Number.isFinite(file.removed) ? file.removed : 0,
           source: file.source || 'git',
+          binary: !!file.binary,
+          untracked: !!file.untracked,
           expanded: currentEdits.find(edit => edit.file === file.file)?.expanded || false,
           diff: currentEdits.find(edit => edit.file === file.file)?.diff || '',
           diffLoaded: currentEdits.find(edit => edit.file === file.file)?.diffLoaded || false,
@@ -415,6 +419,8 @@
           ? '1 changed file'
           : total + ' changed files';
       }
+      if (editsKeepAllBtn) editsKeepAllBtn.disabled = total === 0;
+      if (editsDiscardAllBtn) editsDiscardAllBtn.disabled = total === 0;
       if (!editsList || !editsEmptyState) return;
 
       editsList.innerHTML = '';
@@ -440,6 +446,7 @@
             '<div class="edit-actions">' +
               '<button class="edit-action" data-action="open-file" title="Open file">Open</button>' +
               '<button class="edit-action" data-action="open-diff" title="Open diff">Diff</button>' +
+              '<button class="edit-action danger" data-action="discard-file" title="Discard changes to this file">Discard</button>' +
             '</div>' +
           '</div>' +
           '<div class="edit-diff"></div>';
@@ -450,8 +457,11 @@
         if (icon) icon.textContent = editIconForFile(edit.file);
         if (title) title.textContent = edit.file;
         if (meta) {
-          const sourceLabel = edit.source === 'git' ? 'workspace diff' : (edit.title || 'edited file');
-          meta.textContent = statusLabel(edit.status) + ' - ' + sourceLabel;
+          const parts = [statusLabel(edit.status)];
+          if (edit.untracked) parts.push('untracked');
+          else parts.push(edit.source === 'git' ? 'workspace diff' : (edit.title || 'edited file'));
+          if (edit.binary) parts.push('binary');
+          meta.textContent = parts.join(' - ');
         }
         if (diff && edit.expanded) {
           renderEditDiffPreview(diff, edit);
@@ -473,6 +483,8 @@
               vscode.postMessage({ type: 'openChangedFile', file: edit.file });
             } else if (button.dataset.action === 'open-diff') {
               vscode.postMessage({ type: 'openChangedDiff', file: edit.file });
+            } else if (button.dataset.action === 'discard-file') {
+              vscode.postMessage({ type: 'discardChangedFile', file: edit.file });
             }
           });
         }
@@ -484,7 +496,7 @@
       const edit = currentEdits.find(item => item.file === file);
       if (!edit) return;
       edit.expanded = !edit.expanded;
-      if (edit.expanded && edit.source === 'git' && !edit.diffLoaded) {
+      if (edit.expanded && edit.source === 'git' && !edit.binary && !edit.diffLoaded) {
         edit.diffLoaded = false;
         vscode.postMessage({ type: 'getFileDiff', file });
       } else if (edit.expanded && edit.source !== 'git') {
@@ -502,6 +514,10 @@
         return;
       }
       container.classList.remove('loading');
+      if (edit.binary) {
+        container.textContent = 'Binary file preview is not available.';
+        return;
+      }
       if (!edit.diff) {
         container.textContent = 'No text diff available.';
         return;
@@ -873,6 +889,8 @@
     });
     if (composerAttachBtn) composerAttachBtn.addEventListener('click', () => vscode.postMessage({ type: 'pickContext', kind: 'selection' }));
     if (bottomAttachBtn) bottomAttachBtn.addEventListener('click', () => vscode.postMessage({ type: 'pickContext', kind: 'file' }));
+    if (editsKeepAllBtn) editsKeepAllBtn.addEventListener('click', () => vscode.postMessage({ type: 'keepAllChanges' }));
+    if (editsDiscardAllBtn) editsDiscardAllBtn.addEventListener('click', () => vscode.postMessage({ type: 'discardAllChanges' }));
     if (composerNewThreadBtn) composerNewThreadBtn.addEventListener('click', () => execCmd('acp.newConversation'));
     if (enhancePromptBtn) enhancePromptBtn.addEventListener('click', () => {
       if (!promptInput.value.trim()) {

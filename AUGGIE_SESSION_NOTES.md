@@ -93,7 +93,7 @@ Public reference note:
   - The Edits tab now requests Git-backed changed-file snapshots from the extension host.
   - For tracked changes, counters use `git diff --numstat HEAD --` and show real added/removed line totals.
   - Inferred edit-tool rows remain as a live fallback until Git-backed data arrives.
-  - Untracked files and binary-file labels are still pending.
+  - Untracked files and binary-file labels were added later on the `auggie-edits-controls` branch and still need dev-host smoke testing.
   - Expandable diff previews now request `git diff -- <file>` from the extension host.
   - Diff previews render hunk/add/remove/context lines inline and truncate long diffs.
   - Edit rows now include Open and Diff actions.
@@ -365,6 +365,21 @@ File/search/external action-card summary pass on 2026-07-04:
   - `cmd /c npm run lint` passed.
 - Needs dev-host smoke test: ask Auggie to read a file, search the workspace, and optionally fetch/use a URL if available; expand the resulting tool cards and verify path/query/url/preview rows appear.
 
+Edits controls pass on 2026-07-04:
+
+- Work branch: `auggie-edits-controls`, stacked on `auggie-action-card-summaries`.
+- Edits tab now includes `Keep All` and `Discard All` controls.
+- Each changed-file row now includes a `Discard` action.
+- Discard actions are guarded by modal VS Code warning prompts before changing files.
+- Extension-side changed-file detection now includes untracked files from `git ls-files --others --exclude-standard`.
+- Tracked binary changes are labeled from `git diff --numstat` `-` markers; untracked binary files are detected with a small byte scan.
+- Untracked text files show a simple added-line preview when expanded.
+- Verification after this pass:
+  - `node --check media\chatWebview.js` passed.
+  - `cmd /c npm run compile` passed.
+  - `cmd /c npm run lint` passed.
+- Needs dev-host smoke test: create/modify a disposable file, verify it appears in Edits, expand preview, test `Keep All` as a no-op/refresh, and test `Discard` or `Discard All` only on disposable changes.
+
 ## Known Issues / Watch Items
 
 - Need user smoke test after each F5 dev-host restart.
@@ -376,7 +391,7 @@ File/search/external action-card summary pass on 2026-07-04:
 - Rules/Default Context are prompt-context chips, not full Augment index/rules integrations yet.
 - Need to ensure context injection is acceptable to Auggie and not too noisy.
 - Tasks tab uses ACP plan updates, so it only has content when Auggie emits a plan.
-- Edits now shows real Git line deltas for tracked files, keeps inferred rows as a fallback, has read-only expandable diff previews, and can open files/diffs. It does not yet show untracked files, binary labels, external open actions, or keep/discard controls.
+- Edits now shows real Git line deltas, untracked files, binary labels, expandable diff previews, open/diff actions, and guarded discard controls. The controls branch still needs dev-host smoke testing before treating it as stable.
 
 ## Next Best Work
 

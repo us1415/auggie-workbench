@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { execFile } from 'child_process';
+import { promises as fs } from 'fs';
 import { promisify } from 'util';
 import { marked } from 'marked';
 import { SessionManager } from '../core/SessionManager';
@@ -23,6 +24,8 @@ type ChangedFileSnapshot = {
   removed: number;
   status: string;
   source: string;
+  binary?: boolean;
+  untracked?: boolean;
 };
 
 /**
@@ -144,6 +147,15 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
           break;
         case 'openChangedDiff':
           await this.openChangedDiff(message.file);
+          break;
+        case 'keepAllChanges':
+          await this.refreshChangedFiles();
+          break;
+        case 'discardChangedFile':
+          await this.discardChangedFile(message.file);
+          break;
+        case 'discardAllChanges':
+          await this.discardAllChanges();
           break;
         case 'ready':
           this.sendCurrentState();
@@ -414,6 +426,17 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     return Number.isFinite(parsed) ? parsed : 0;
   }
 
+  private parseGitPath(value: string): string {
+    const trimmed = value.trim();
+    const renameMatch = trimmed.match(/^(.*) => (.*)$/);
+    if (!renameMatch) {
+      return trimmed;
+    }
+    const prefix = renameMatch[1].replace(/\{.*$/, '');
+    const suffix = renameMatch[2].replace(/^.*\}/, '');
+    return `${prefix}${suffix}`;
+  }
+
   private isSafeChangedFile(file: string): boolean {
     if (!file) { return false; }
     if (/^[a-zA-Z]:[\\/]/.test(file) || file.startsWith('/') || file.startsWith('\\')) {
@@ -434,31 +457,82 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     if (!cwd) { return []; }
 
     try {
-      const { stdout } = await execFileAsync('git', ['diff', '--numstat', 'HEAD', '--'], {
+      const { stdout: diffStdout } = await execFileAsync('git', ['diff', '--numstat', 'HEAD', '--'], {
         cwd,
         windowsHide: true,
         maxBuffer: 1024 * 1024,
       });
 
-      return stdout
+      const tracked = diffStdout
         .split(/\r?\n/)
         .map(line => line.trim())
         .filter(Boolean)
         .map((line) => {
           const [addedRaw, removedRaw, ...pathParts] = line.split(/\t/);
-          const file = pathParts.join('\t').trim();
+          const file = this.parseGitPath(pathParts.join('\t'));
           return {
             file,
             added: this.parseNumstatNumber(addedRaw),
             removed: this.parseNumstatNumber(removedRaw),
             status: 'changed',
             source: 'git',
+            binary: addedRaw === '-' || removedRaw === '-',
           };
         })
         .filter(change => !!change.file);
+
+      const { stdout: untrackedStdout } = await execFileAsync(
+        'git',
+        ['ls-files', '--others', '--exclude-standard'],
+        {
+          cwd,
+          windowsHide: true,
+          maxBuffer: 1024 * 1024,
+        },
+      );
+
+      const untracked = await Promise.all(untrackedStdout
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(Boolean)
+        .filter(file => this.isSafeChangedFile(file))
+        .map(async (file) => ({
+          file,
+          added: 0,
+          removed: 0,
+          status: 'untracked',
+          source: 'git',
+          binary: await this.isBinaryWorkspaceFile(file),
+          untracked: true,
+        })));
+
+      return tracked.concat(untracked);
     } catch (e) {
       logError('Failed to read changed files from git', e);
       return [];
+    }
+  }
+
+  private async isBinaryWorkspaceFile(file: string): Promise<boolean> {
+    const uri = this.changedFileUri(file);
+    if (!uri) { return false; }
+
+    try {
+      const handle = await fs.open(uri.fsPath, 'r');
+      try {
+        const buffer = Buffer.alloc(8000);
+        const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+        for (let i = 0; i < bytesRead; i++) {
+          if (buffer[i] === 0) {
+            return true;
+          }
+        }
+        return false;
+      } finally {
+        await handle.close();
+      }
+    } catch {
+      return false;
     }
   }
 
@@ -496,9 +570,105 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  private async discardChangedFile(file: unknown): Promise<void> {
+    if (typeof file !== 'string' || !this.isSafeChangedFile(file)) { return; }
+    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!cwd) { return; }
+
+    const confirmed = await vscode.window.showWarningMessage(
+      `Discard all local changes to ${file}? This cannot be undone by Auggie Workbench.`,
+      { modal: true },
+      'Discard',
+    );
+    if (confirmed !== 'Discard') { return; }
+
+    try {
+      await execFileAsync('git', ['checkout', 'HEAD', '--', file], {
+        cwd,
+        windowsHide: true,
+        maxBuffer: 1024 * 1024,
+      });
+    } catch {
+      await execFileAsync('git', ['clean', '-f', '--', file], {
+        cwd,
+        windowsHide: true,
+        maxBuffer: 1024 * 1024,
+      });
+    }
+    await this.refreshChangedFiles();
+  }
+
+  private async discardAllChanges(): Promise<void> {
+    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!cwd) { return; }
+
+    const files = await this.getChangedFiles();
+    if (files.length === 0) { return; }
+
+    const confirmed = await vscode.window.showWarningMessage(
+      `Discard all local changes in ${files.length} file(s)? This cannot be undone by Auggie Workbench.`,
+      { modal: true },
+      'Discard All',
+    );
+    if (confirmed !== 'Discard All') { return; }
+
+    const trackedFiles = files.filter(file => !file.untracked).map(file => file.file);
+    const untrackedFiles = files.filter(file => file.untracked).map(file => file.file);
+
+    if (trackedFiles.length > 0) {
+      await execFileAsync('git', ['checkout', 'HEAD', '--', ...trackedFiles], {
+        cwd,
+        windowsHide: true,
+        maxBuffer: 1024 * 1024,
+      });
+    }
+    if (untrackedFiles.length > 0) {
+      await execFileAsync('git', ['clean', '-f', '--', ...untrackedFiles], {
+        cwd,
+        windowsHide: true,
+        maxBuffer: 1024 * 1024,
+      });
+    }
+    await this.refreshChangedFiles();
+  }
+
+  private async isUntrackedFile(file: string): Promise<boolean> {
+    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!cwd || !this.isSafeChangedFile(file)) { return false; }
+
+    try {
+      await execFileAsync('git', ['ls-files', '--error-unmatch', '--', file], {
+        cwd,
+        windowsHide: true,
+        maxBuffer: 1024 * 1024,
+      });
+      return false;
+    } catch {
+      return true;
+    }
+  }
+
+  private async getUntrackedFilePreview(file: string): Promise<string> {
+    const uri = this.changedFileUri(file);
+    if (!uri || await this.isBinaryWorkspaceFile(file)) { return ''; }
+
+    try {
+      const text = await fs.readFile(uri.fsPath, 'utf8');
+      return text
+        .split(/\r?\n/)
+        .slice(0, 90)
+        .map(line => `+${line}`)
+        .join('\n');
+    } catch {
+      return '';
+    }
+  }
+
   private async sendFileDiff(file: unknown): Promise<void> {
     if (typeof file !== 'string' || !file) { return; }
-    const diff = await this.getFileDiff(file);
+    const diff = await this.isUntrackedFile(file)
+      ? await this.getUntrackedFilePreview(file)
+      : await this.getFileDiff(file);
     this.postMessage({
       type: 'fileDiff',
       file,
@@ -1064,11 +1234,46 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       gap: 8px;
     }
 
+    .edits-header-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-left: auto;
+    }
+
     .tasks-progress,
     .edits-progress {
       color: var(--vscode-descriptionForeground);
       font-size: 0.9em;
       white-space: nowrap;
+    }
+
+    .edits-bulk-action {
+      height: 24px;
+      padding: 0 8px;
+      border: 1px solid var(--vscode-button-border, transparent);
+      border-radius: 4px;
+      background: transparent;
+      color: var(--vscode-descriptionForeground);
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.88em;
+      white-space: nowrap;
+    }
+
+    .edits-bulk-action:hover:not(:disabled) {
+      background: var(--vscode-toolbar-hoverBackground);
+      color: var(--vscode-foreground);
+    }
+
+    .edits-bulk-action:disabled {
+      cursor: default;
+      opacity: 0.45;
+    }
+
+    .edits-bulk-action.danger,
+    .edit-action.danger {
+      color: var(--vscode-errorForeground);
     }
 
     .tasks-list,
@@ -1138,6 +1343,10 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     .edit-action:hover {
       background: var(--vscode-toolbar-hoverBackground);
       color: var(--vscode-foreground);
+    }
+
+    .edit-action.danger:hover {
+      color: var(--vscode-errorForeground);
     }
 
     .edit-diff {
@@ -2518,6 +2727,10 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       <div class="view-panel edits-view" id="editsView" role="tabpanel">
         <div class="edits-header-row">
           <div class="workbench-section-title">Edits</div>
+          <div class="edits-header-actions">
+            <button class="edits-bulk-action" id="editsKeepAllBtn" title="Refresh and keep current changes" disabled>Keep All</button>
+            <button class="edits-bulk-action danger" id="editsDiscardAllBtn" title="Discard all listed changes" disabled>Discard All</button>
+          </div>
           <div class="edits-progress" id="editsProgress">0 changed files</div>
         </div>
         <div class="edits-list" id="editsList"></div>

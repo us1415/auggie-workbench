@@ -102,11 +102,12 @@ Public references:
 - [x] Show changed file list with file icons.
 - [x] Mirror file-edit activity cards into Edits.
 - [x] Replace placeholder counters with real Git line deltas for tracked changes.
-- [ ] Add untracked-file detection and binary-file labeling.
+- [x] Add untracked-file detection and binary-file labeling.
 - [x] Add expandable diff preview for edited files.
 - [x] Add open-file/open-diff action.
 - [ ] Add external/open-in-explorer action if useful.
-- [ ] Add Keep All / Discard All actions.
+- [x] Add Keep All / Discard All actions.
+- [ ] Smoke test Edits untracked/binary/discard controls in the Extension Development Host.
 - [ ] Track terminal commands, integration calls, and file diffs as reviewable actions.
 - [x] Use inferred edit-tool state if ACP does not expose explicit edits.
 
