@@ -78,9 +78,10 @@ Public references:
 - [x] Show action-card status states: waiting/running/completed/failed.
 - [x] Add action-card header pieces: expand chevron, action icon, title, status, overflow/open placeholders.
 - [x] Add compact summary text for command actions when ACP/MCP payloads expose command details.
-- [ ] Render external integration calls as cards, e.g. Web/Get results with source URL.
+- [x] Render external integration calls with URL/method/preview rows when ACP/MCP payloads expose them.
 - [x] Render terminal command cards with command text, output preview, and completion status.
-- [ ] Render file read/search cards with file/path/result summaries.
+- [x] Render file read/search cards with file/path/query/result summaries when ACP/MCP payloads expose them.
+- [ ] Smoke test file/search/external action-card summaries in the Extension Development Host.
 - [ ] If ACP exposes approval-needed events, add Approve/Reject controls.
 - [ ] Keep Activity panel and action cards consistent so the user can see both live progress and review details.
 

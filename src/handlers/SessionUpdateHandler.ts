@@ -51,9 +51,16 @@ export class SessionUpdateHandler {
     if (data.name) { summary.push(`name=${data.name}`); }
     if (data.command) { summary.push(`command=${JSON.stringify(data.command)}`); }
     if (Array.isArray(data.args)) { summary.push(`args=${JSON.stringify(data.args)}`); }
+    if (data.query) { summary.push(`query=${JSON.stringify(data.query)}`); }
+    if (data.pattern) { summary.push(`pattern=${JSON.stringify(data.pattern)}`); }
+    if (data.url) { summary.push(`url=${JSON.stringify(data.url)}`); }
     if (data.content?.type) { summary.push(`contentType=${data.content.type}`); }
     if (data.location?.path) { summary.push(`path=${data.location.path}`); }
+    if (data.location?.url) { summary.push(`url=${data.location.url}`); }
     if (data.path) { summary.push(`path=${data.path}`); }
+    if (data.arguments?.path) { summary.push(`argPath=${data.arguments.path}`); }
+    if (data.arguments?.query) { summary.push(`argQuery=${JSON.stringify(data.arguments.query)}`); }
+    if (data.arguments?.url) { summary.push(`argUrl=${JSON.stringify(data.arguments.url)}`); }
 
     return ` (${summary.join(', ') || `fields=${fields.join(',')}`})`;
   }

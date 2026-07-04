@@ -1526,8 +1526,13 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       font-family: var(--vscode-editor-font-family);
       font-size: 0.96em;
     }
+    .tc-output-label {
+      margin-top: 7px;
+      color: var(--vscode-descriptionForeground);
+      font-size: 0.92em;
+    }
     .tc-output {
-      margin: 7px 0 0;
+      margin: 3px 0 0;
       max-height: 180px;
       overflow: auto;
       padding: 7px 8px;

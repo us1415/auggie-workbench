@@ -346,6 +346,25 @@ Terminal/action card summary pass on 2026-07-04:
   - `cmd /c npm run lint` passed.
 - Needs dev-host smoke test: run a visible terminal command and expand the resulting tool card to confirm the command/output details appear from Auggie's actual payload shape.
 
+File/search/external action-card summary pass on 2026-07-04:
+
+- Work branch: `auggie-action-card-summaries`.
+- `media/chatWebview.js` now derives additional action-card details from common ACP/MCP payload fields:
+  - tool name/kind
+  - file path(s)
+  - search query/pattern
+  - URL and HTTP method
+  - result count
+  - summary/description/message
+  - bounded preview content
+- Non-terminal cards now label preview output as `Preview`; terminal cards still label it as `Output`.
+- `SessionUpdateHandler` diagnostics now include query/pattern/url and common argument path/query/url fields, so real Auggie payload gaps are easier to inspect from Output logs.
+- Verification after this pass:
+  - `node --check media\chatWebview.js` passed.
+  - `cmd /c npm run compile` passed.
+  - `cmd /c npm run lint` passed.
+- Needs dev-host smoke test: ask Auggie to read a file, search the workspace, and optionally fetch/use a URL if available; expand the resulting tool cards and verify path/query/url/preview rows appear.
+
 ## Known Issues / Watch Items
 
 - Need user smoke test after each F5 dev-host restart.
@@ -385,7 +404,7 @@ Terminal/action card summary pass on 2026-07-04:
    - Next terminal work is richer command/action cards, not basic connectivity.
 5. Activity cards:
    - smoke test command activity details in the Extension Development Host
-   - render file read/search cards with file/path/result summaries
+   - smoke test file read/search card summaries in the Extension Development Host
    - keep terminal selection/output as a later low-priority convenience
 6. Continue context-menu parity:
    - make Files/Folders nested in-webview lists if feasible

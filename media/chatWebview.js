@@ -1778,6 +1778,58 @@
       return summary;
     }
 
+    function valueAtPath(object, path) {
+      if (!object || !path) return undefined;
+      return path.split('.').reduce((current, part) => {
+        if (current === undefined || current === null) return undefined;
+        return current[part];
+      }, object);
+    }
+
+    function firstUsefulValue(object, paths) {
+      for (const path of paths) {
+        const value = valueAtPath(object, path);
+        if (value === undefined || value === null || value === '') continue;
+        if (Array.isArray(value) && value.length === 0) continue;
+        return value;
+      }
+      return undefined;
+    }
+
+    function displayList(value) {
+      if (!Array.isArray(value)) return value;
+      return value
+        .map(item => {
+          if (typeof item === 'string') return item;
+          return item?.path || item?.file || item?.uri || item?.url || item?.name || '';
+        })
+        .filter(Boolean)
+        .join(', ');
+    }
+
+    function resultCount(details) {
+      const count = firstUsefulValue(details, [
+        'result.count',
+        'result.total',
+        'result.resultCount',
+        'count',
+        'total',
+        'resultCount',
+      ]);
+      if (count !== undefined) return count;
+
+      const arrays = [
+        details?.result?.matches,
+        details?.matches,
+        details?.result?.results,
+        details?.results,
+        details?.result?.files,
+        details?.files,
+      ];
+      const found = arrays.find(Array.isArray);
+      return found ? found.length : undefined;
+    }
+
     function buildToolDetailModel(title, details) {
       const args = toolArguments(details);
       const contentText = textFromToolContent(details?.content) ||
@@ -1786,17 +1838,84 @@
       const terminalSummary = parseTerminalSummary(contentText);
       const command = args.command || details?.command || details?.name || '';
       const commandArgs = Array.isArray(args.args) ? args.args : (Array.isArray(details?.args) ? details.args : []);
-      const isTerminalLike = /terminal|run_command|launch-process|shell|command/i.test([
+      const toolIdentity = [
         title,
         details?.name,
         details?.kind,
         details?.toolName,
+      ].filter(Boolean).join(' ');
+      const isTerminalLike = /terminal|run_command|launch-process|shell|command/i.test([
+        toolIdentity,
+        command,
       ].filter(Boolean).join(' '));
+      const isFileLike = /\b(read|open|view|write|edit|file|glob|list|ls)\b/i.test(toolIdentity);
+      const isSearchLike = /\b(search|grep|find|ripgrep|rg|query)\b/i.test(toolIdentity);
+      const isExternalLike = /\b(web|http|url|fetch|get|browser|request)\b/i.test(toolIdentity);
+      const filePath = firstUsefulValue({ details, args }, [
+        'args.path',
+        'args.file',
+        'args.filePath',
+        'args.filename',
+        'args.uri',
+        'args.paths',
+        'args.files',
+        'details.path',
+        'details.file',
+        'details.filePath',
+        'details.filename',
+        'details.uri',
+        'details.location.path',
+        'details.result.path',
+        'details.result.file',
+      ]);
+      const query = firstUsefulValue({ details, args }, [
+        'args.query',
+        'args.pattern',
+        'args.regex',
+        'args.search',
+        'args.text',
+        'details.query',
+        'details.pattern',
+        'details.regex',
+        'details.search',
+        'details.result.query',
+      ]);
+      const url = firstUsefulValue({ details, args }, [
+        'args.url',
+        'args.uri',
+        'args.href',
+        'details.url',
+        'details.uri',
+        'details.href',
+        'details.request.url',
+        'details.result.url',
+        'details.location.url',
+      ]);
+      const method = firstUsefulValue({ details, args }, [
+        'args.method',
+        'details.method',
+        'details.request.method',
+        'details.result.method',
+      ]);
+      const summary = firstUsefulValue(details, [
+        'result.summary',
+        'result.description',
+        'summary',
+        'description',
+        'message',
+      ]);
 
       return {
+        tool: details?.name || details?.toolName || details?.kind || '',
         command,
         commandArgs,
         cwd: args.cwd || details?.cwd || '',
+        filePath: displayList(filePath),
+        query,
+        url,
+        method,
+        resultCount: resultCount(details),
+        summary,
         terminalId: terminalSummary.terminalId || details?.terminalId || details?.result?.terminalId || '',
         exitCode: terminalSummary.exitCode || (details?.exitCode ?? details?.result?.exitCode),
         signal: terminalSummary.signal || details?.signal || details?.result?.signal || '',
@@ -1804,6 +1923,9 @@
         truncated: terminalSummary.truncated || (details?.truncated ?? details?.result?.truncated),
         output: terminalSummary.output || details?.result?.output || details?.output || contentText,
         isTerminalLike,
+        isFileLike,
+        isSearchLike,
+        isExternalLike,
       };
     }
 
@@ -1830,11 +1952,18 @@
 
       const model = buildToolDetailModel(title, details || {});
       let rendered = false;
+      rendered = appendDetailRow(detailEl, 'Tool', model.tool, { mono: true }) || rendered;
       if (model.command) {
         const commandText = [model.command].concat(model.commandArgs || []).join(' ');
         rendered = appendDetailRow(detailEl, 'Command', commandText, { mono: true }) || rendered;
       }
       rendered = appendDetailRow(detailEl, 'Working directory', model.cwd, { mono: true }) || rendered;
+      rendered = appendDetailRow(detailEl, 'File', model.filePath, { mono: true }) || rendered;
+      rendered = appendDetailRow(detailEl, 'Query', model.query, { mono: true }) || rendered;
+      rendered = appendDetailRow(detailEl, 'URL', model.url, { mono: true }) || rendered;
+      rendered = appendDetailRow(detailEl, 'Method', model.method, { mono: true }) || rendered;
+      rendered = appendDetailRow(detailEl, 'Results', model.resultCount, { mono: true }) || rendered;
+      rendered = appendDetailRow(detailEl, 'Summary', model.summary) || rendered;
       rendered = appendDetailRow(detailEl, 'Terminal', model.terminalId, { mono: true }) || rendered;
       rendered = appendDetailRow(detailEl, 'Exit code', model.exitCode, { mono: true }) || rendered;
       rendered = appendDetailRow(detailEl, 'Signal', model.signal, { mono: true }) || rendered;
@@ -1843,6 +1972,10 @@
 
       if (model.output) {
         const output = String(model.output);
+        const label = document.createElement('div');
+        label.className = 'tc-output-label';
+        label.textContent = model.isTerminalLike ? 'Output' : 'Preview';
+        detailEl.appendChild(label);
         const pre = document.createElement('pre');
         pre.className = 'tc-output';
         pre.textContent = output.length > 1600
@@ -1853,9 +1986,13 @@
       }
 
       if (!rendered) {
-        detailEl.textContent = model.isTerminalLike
-          ? 'Waiting for command details from Auggie.'
-          : 'No additional details from Auggie yet.';
+        if (model.isTerminalLike) {
+          detailEl.textContent = 'Waiting for command details from Auggie.';
+        } else if (model.isFileLike || model.isSearchLike || model.isExternalLike) {
+          detailEl.textContent = 'Waiting for tool details from Auggie.';
+        } else {
+          detailEl.textContent = 'No additional details from Auggie yet.';
+        }
       }
     }
 
