@@ -19,7 +19,7 @@ import { AgentManager } from './AgentManager';
 import { ConnectionManager, ConnectionInfo } from './ConnectionManager';
 import { SessionUpdateHandler } from '../handlers/SessionUpdateHandler';
 import { SessionHistoryStore } from './SessionHistoryStore';
-import { getAgentConfigs } from '../config/AgentConfig';
+import { AcpMcpServer, getAgentConfigs, getMcpServers } from '../config/AgentConfig';
 import { log, logError } from '../utils/Logger';
 import { sendEvent, sendError } from '../utils/TelemetryManager';
 
@@ -98,6 +98,9 @@ export class SessionManager extends EventEmitter {
   /** Client-side session history (optional — only used for tier-2 tree). */
   private historyStore: SessionHistoryStore | null = null;
 
+  /** Built-in MCP tools supplied by this VS Code client. */
+  private clientMcpServerProvider: (() => AcpMcpServer[]) | null = null;
+
   constructor(
     private readonly agentManager: AgentManager,
     private readonly connectionManager: ConnectionManager,
@@ -109,6 +112,10 @@ export class SessionManager extends EventEmitter {
   /** Wire in the persistent session-history store (called once at startup). */
   setHistoryStore(store: SessionHistoryStore): void {
     this.historyStore = store;
+  }
+
+  setClientMcpServerProvider(provider: () => AcpMcpServer[]): void {
+    this.clientMcpServerProvider = provider;
   }
 
   /** Public accessor for downstream UI. */
@@ -137,6 +144,13 @@ export class SessionManager extends EventEmitter {
       load: !!(caps as any)?.loadSession,
       resume: !!sc?.resume,
     };
+  }
+
+  private getSessionMcpServers(agentName: string): AcpMcpServer[] {
+    return [
+      ...getMcpServers(agentName),
+      ...(this.clientMcpServerProvider?.() ?? []),
+    ];
   }
 
   /**
@@ -289,10 +303,14 @@ export class SessionManager extends EventEmitter {
     cwd: string,
   ): Promise<SessionInfo> {
     let sessionResponse: NewSessionResponse;
+    const mcpServers = this.getSessionMcpServers(agentName);
+    if (mcpServers.length > 0) {
+      log(`SessionManager: attaching ${mcpServers.length} MCP server(s) to new session`);
+    }
     try {
       sessionResponse = await connInfo.connection.newSession({
         cwd,
-        mcpServers: [],
+        mcpServers: mcpServers as any,
       });
     } catch (e: any) {
       if (!this.isAuthRequiredError(e)) {
@@ -305,7 +323,7 @@ export class SessionManager extends EventEmitter {
       try {
         sessionResponse = await connInfo.connection.newSession({
           cwd,
-          mcpServers: [],
+          mcpServers: mcpServers as any,
         });
       } catch (retryErr) {
         logError('Failed to create session after authentication', retryErr);
@@ -819,10 +837,14 @@ export class SessionManager extends EventEmitter {
     this.emit('session-load-start', sessionId, agentName);
 
     try {
+      const mcpServers = this.getSessionMcpServers(agentName);
+      if (mcpServers.length > 0) {
+        log(`SessionManager: attaching ${mcpServers.length} MCP server(s) to loaded session`);
+      }
       const response = await conn.connection.loadSession({
         sessionId,
         cwd,
-        mcpServers: [],
+        mcpServers: mcpServers as any,
       });
       // The response carries the latest mode/model/configOptions snapshot.
       placeholder.modes = (response as any).modes ?? null;
@@ -887,10 +909,14 @@ export class SessionManager extends EventEmitter {
 
     let response: any;
     try {
+      const mcpServers = this.getSessionMcpServers(agentName);
+      if (mcpServers.length > 0) {
+        log(`SessionManager: attaching ${mcpServers.length} MCP server(s) to resumed session`);
+      }
       response = await conn.connection.resumeSession({
         sessionId,
         cwd,
-        mcpServers: [],
+        mcpServers: mcpServers as any,
       });
     } catch (e: any) {
       const msg = String(e?.message || '');

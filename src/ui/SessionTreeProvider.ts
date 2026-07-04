@@ -16,7 +16,7 @@ export class AgentTreeItem extends vscode.TreeItem {
     public readonly connected: boolean,
     collapsibleState: vscode.TreeItemCollapsibleState,
   ) {
-    super(agentName, collapsibleState);
+    super(agentName === 'Auggie CLI' ? 'Auggie' : agentName, collapsibleState);
 
     if (connected) {
       this.contextValue = 'agent-connected';
@@ -25,7 +25,7 @@ export class AgentTreeItem extends vscode.TreeItem {
         new vscode.ThemeColor('testing.iconPassed'),
       );
       this.description = 'connected';
-      this.command = { command: 'acp.openChat', title: 'Open Chat' };
+      this.command = { command: 'acp.openChat', title: 'Open Auggie' };
     } else {
       this.contextValue = 'agent-disconnected';
       this.iconPath = new vscode.ThemeIcon('circle-outline');
@@ -66,7 +66,7 @@ export class SessionTreeItem extends vscode.TreeItem {
     }
     this.command = {
       command: 'acp.openSession',
-      title: 'Open Session',
+      title: 'Open Thread',
       arguments: [{ agentName, sessionId }],
     };
   }
@@ -133,7 +133,7 @@ interface AgentListState {
 }
 
 /**
- * Tree provider for the ACP Agents view. Tier 1 = agents, tier 2 = sessions.
+ * Tree provider for Auggie threads. Tier 1 = Auggie, tier 2 = threads.
  *
  * Tier 2 source-of-truth selection per agent:
  *   - If the agent advertises `session/list`: use that (the agent owns the
@@ -258,9 +258,9 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<AgentNode | 
       new InfoTreeItem(
         'unsupported',
         name,
-        'Session list not supported',
+        'Thread list not supported',
         'This agent does not advertise session/list, session/load, or session/resume.\n'
-          + 'You can still start a new chat from the agent row.',
+          + 'You can still start a new thread from the Auggie row.',
       ),
     ];
   }
@@ -281,14 +281,14 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<AgentNode | 
       return [this.authRequiredLeaf(agentName)];
     }
     if (state.state === 'unsupported') {
-      return [new InfoTreeItem('unsupported', agentName, 'Session list not supported')];
+      return [new InfoTreeItem('unsupported', agentName, 'Thread list not supported')];
     }
     // state === 'ready'
     const sessions = state.agentSessions ?? [];
     const activeId = this.sessionManager.getActiveSessionId();
     if (sessions.length === 0 && !state.nextCursor) {
       return [
-        new InfoTreeItem('empty', agentName, '(no previous sessions)'),
+        new InfoTreeItem('empty', agentName, '(no previous threads)'),
       ];
     }
     const items: ChildNode[] = sessions.map(s => this.buildAgentSessionItem(agentName, s, activeId));
@@ -300,7 +300,7 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<AgentNode | 
         undefined,
         {
           command: 'acp.loadMoreSessions',
-          title: 'Load more sessions',
+          title: 'Load more threads',
           arguments: [agentName],
         },
       ));
@@ -392,7 +392,7 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<AgentNode | 
         new InfoTreeItem(
           'unsupported',
           agentName,
-          'Session history unavailable',
+          'Thread history unavailable',
           'No workspace storage is wired up.',
         ),
       ];
@@ -404,8 +404,8 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<AgentNode | 
         new InfoTreeItem(
           'empty',
           agentName,
-          '(no previous sessions)',
-          'Sessions you start with this agent will appear here.',
+          '(no previous threads)',
+          'Threads you start in this workspace will appear here.',
         ),
       ];
     }
@@ -471,11 +471,11 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<AgentNode | 
     return new InfoTreeItem(
       'auth-required',
       agentName,
-      'Authentication required',
-      'Click to retry authentication.',
+      'Sign in required',
+      'Click to retry Auggie sign in.',
       {
         command: 'acp.connectAgent',
-        title: 'Retry connect',
+        title: 'Retry Auggie',
         arguments: [agentName],
       },
     );
@@ -485,7 +485,7 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<AgentNode | 
     return new InfoTreeItem(
       'error',
       agentName,
-      'Failed to load sessions',
+      'Failed to load threads',
       message,
       {
         command: 'acp.refreshSessions',
@@ -541,8 +541,8 @@ function buildSessionTooltip(
   source: 'agent' | 'local',
 ): string {
   const lines = [
-    `Agent: ${agentName}`,
-    `Session: ${sessionId}`,
+    `Auggie`,
+    `Thread: ${sessionId}`,
   ];
   if (cwd) { lines.push(`cwd: ${cwd}`); }
   if (updatedAt) { lines.push(`Last active: ${updatedAt}`); }

@@ -4,6 +4,7 @@ import { AgentManager } from './core/AgentManager';
 import { ConnectionManager } from './core/ConnectionManager';
 import { SessionManager } from './core/SessionManager';
 import { SessionHistoryStore } from './core/SessionHistoryStore';
+import { TerminalMcpBridge } from './core/TerminalMcpBridge';
 import { SessionUpdateHandler } from './handlers/SessionUpdateHandler';
 import { SessionTreeProvider } from './ui/SessionTreeProvider';
 import { StatusBarManager } from './ui/StatusBarManager';
@@ -13,8 +14,24 @@ import { fetchRegistry } from './config/RegistryClient';
 import { log, logError, disposeChannels, getOutputChannel, getTrafficChannel } from './utils/Logger';
 import { initTelemetry, sendEvent } from './utils/TelemetryManager';
 
-export function activate(context: vscode.ExtensionContext): void {
-  log('ACP Client extension activating...');
+const AUGGIE_AGENT_NAME = 'Auggie CLI';
+
+async function ensureWorkspaceOpen(): Promise<boolean> {
+  if (vscode.workspace.workspaceFolders?.length) { return true; }
+
+  const choice = await vscode.window.showWarningMessage(
+    'Open a folder before starting Auggie so it can work in the right codebase.',
+    'Open Folder',
+    'Cancel',
+  );
+  if (choice === 'Open Folder') {
+    await vscode.commands.executeCommand('vscode.openFolder');
+  }
+  return false;
+}
+
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
+  log('Auggie Workbench activating...');
 
   // --- Telemetry ---
   const telemetryReporter = initTelemetry();
@@ -29,6 +46,17 @@ export function activate(context: vscode.ExtensionContext): void {
     connectionManager,
     sessionUpdateHandler,
   );
+
+  const terminalMcpBridge = new TerminalMcpBridge(context.extensionUri);
+  try {
+    await terminalMcpBridge.start();
+    sessionManager.setClientMcpServerProvider(() => {
+      const server = terminalMcpBridge.getMcpServer();
+      return server ? [server] : [];
+    });
+  } catch (e) {
+    logError('Failed to start terminal MCP bridge', e);
+  }
 
   // Persistent client-side session-history cache (used as the tier-2 tree
   // source for agents that support session/load or session/resume but not
@@ -48,6 +76,7 @@ export function activate(context: vscode.ExtensionContext): void {
     context.extensionUri,
     sessionManager,
     sessionUpdateHandler,
+    context.workspaceState,
   );
   const chatViewRegistration = vscode.window.registerWebviewViewProvider(
     ChatWebviewProvider.viewType,
@@ -102,6 +131,95 @@ export function activate(context: vscode.ExtensionContext): void {
     if (sessionId !== sessionManager.getActiveSessionId()) { return; }
     chatWebviewProvider.notifySessionInfoUpdate(update?.title);
   });
+
+  let isOpeningAuggieThread = false;
+
+  async function openLatestAuggieThread(options: { showProgress?: boolean } = {}): Promise<void> {
+    if (isOpeningAuggieThread) { return; }
+    isOpeningAuggieThread = true;
+
+    try {
+      if (!(await ensureWorkspaceOpen())) { return; }
+
+      const activeSession = sessionManager.getActiveSession();
+      if (activeSession) {
+        await vscode.commands.executeCommand('acp-chat.focus');
+        return;
+      }
+
+      const cwd = workspaceCwd();
+      let restored = false;
+
+      const restore = async () => {
+        await sessionManager.ensureConnected(AUGGIE_AGENT_NAME);
+        const caps = sessionManager.getCachedCapabilities(AUGGIE_AGENT_NAME);
+        let latestSessionId: string | undefined;
+
+        if (caps?.list) {
+          try {
+            const listed = await sessionManager.listSessions(AUGGIE_AGENT_NAME, { cwd });
+            latestSessionId = listed.sessions[0]?.sessionId;
+          } catch (e) {
+            logError('Failed to list Auggie sessions while restoring latest thread', e);
+          }
+        }
+
+        if (!latestSessionId) {
+          const localHistory = historyStore.list(AUGGIE_AGENT_NAME, cwd);
+          latestSessionId = localHistory[0]?.sessionId;
+        }
+
+        if (latestSessionId && caps?.load) {
+          await sessionManager.loadSession(AUGGIE_AGENT_NAME, latestSessionId);
+          restored = true;
+          return;
+        }
+        if (latestSessionId && caps?.resume) {
+          await sessionManager.resumeSession(AUGGIE_AGENT_NAME, latestSessionId);
+          restored = true;
+        }
+      };
+
+      try {
+        if (options.showProgress) {
+          await vscode.window.withProgress(
+            {
+              location: vscode.ProgressLocation.Notification,
+              title: 'Opening Auggie...',
+              cancellable: false,
+            },
+            restore,
+          );
+        } else {
+          await restore();
+        }
+      } catch (e) {
+        logError('Failed to restore latest Auggie thread', e);
+      }
+
+      if (!restored) {
+        if (options.showProgress) {
+          await vscode.commands.executeCommand('acp.connectAgent', AUGGIE_AGENT_NAME);
+        } else {
+          await vscode.window.withProgress(
+            {
+              location: vscode.ProgressLocation.Window,
+              title: 'Opening Auggie...',
+              cancellable: false,
+            },
+            async () => {
+              await vscode.commands.executeCommand('acp.connectAgent', AUGGIE_AGENT_NAME);
+            }
+          );
+        }
+      }
+      await vscode.commands.executeCommand('acp-chat.focus');
+    } finally {
+      isOpeningAuggieThread = false;
+    }
+  }
+
+  chatWebviewProvider.setAutoRestore(() => openLatestAuggieThread({ showProgress: false }));
 
   // --- Commands ---
 
@@ -159,8 +277,13 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   });
 
+  // Start Auggie directly, bypassing the generic agent picker.
+  const connectAuggieCmd = vscode.commands.registerCommand('acp.connectAuggie', async () => {
+    await openLatestAuggieThread({ showProgress: true });
+  });
+
   // New Conversation (disconnect + clear chat + reconnect same agent)
-  const newConversationCmd = vscode.commands.registerCommand('acp.newConversation', async () => {
+  const newConversationCmd = vscode.commands.registerCommand('acp.newConversation', async (opts?: { skipConfirm?: boolean }) => {
     const activeSession = sessionManager.getActiveSession();
     if (!activeSession) {
       // No active agent — fall back to connect
@@ -169,7 +292,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }
 
     // Confirm if there's existing chat content
-    if (chatWebviewProvider.hasChatContent) {
+    if (!opts?.skipConfirm && chatWebviewProvider.hasChatContent) {
       const choice = await vscode.window.showWarningMessage(
         'Start a new conversation? This will clear the current chat history.',
         'New Conversation',
@@ -499,6 +622,7 @@ export function activate(context: vscode.ExtensionContext): void {
     chatViewRegistration,
     statusBarManager,
     connectAgentCmd,
+    connectAuggieCmd,
     newConversationCmd,
     disconnectAgentCmd,
     openChatCmd,
@@ -522,6 +646,7 @@ export function activate(context: vscode.ExtensionContext): void {
     {
       dispose: () => {
         sessionManager.dispose();
+        terminalMcpBridge.dispose();
         sessionUpdateHandler.dispose();
         chatWebviewProvider.dispose();
         sessionTreeProvider.dispose();
@@ -530,10 +655,10 @@ export function activate(context: vscode.ExtensionContext): void {
     },
   );
 
-  sendEvent('extension/activated', { version: vscode.extensions.getExtension('formulahendry.acp-client')?.packageJSON?.version ?? 'unknown' });
-  log('ACP Client extension activated.');
+  sendEvent('extension/activated', { version: vscode.extensions.getExtension('local.auggie-workbench')?.packageJSON?.version ?? 'unknown' });
+  log('Auggie Workbench activated.');
 }
 
 export function deactivate(): void {
-  log('ACP Client extension deactivated.');
+  log('Auggie Workbench deactivated.');
 }

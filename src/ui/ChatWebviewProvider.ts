@@ -1,10 +1,29 @@
 import * as vscode from 'vscode';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { marked } from 'marked';
 import { SessionManager } from '../core/SessionManager';
 import { SessionUpdateHandler, SessionUpdateListener } from '../handlers/SessionUpdateHandler';
 import type { SessionNotification } from '@agentclientprotocol/sdk';
 import { logError } from '../utils/Logger';
 import { sendEvent } from '../utils/TelemetryManager';
+
+const execFileAsync = promisify(execFile);
+
+type TaskSnapshot = {
+  id: string;
+  title: string;
+  status: string;
+  rawStatus: string;
+};
+
+type ChangedFileSnapshot = {
+  file: string;
+  added: number;
+  removed: number;
+  status: string;
+  source: string;
+};
 
 /**
  * WebviewViewProvider for the ACP chat sidebar.
@@ -16,11 +35,18 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
   private updateListener: SessionUpdateListener;
   private _hasChatContent = false;
+  private autoRestore?: () => Promise<void> | void;
+  private autoRestoreRequested = false;
+  private webviewMessageDisposable?: vscode.Disposable;
+  private changedFilesRefreshTimer?: NodeJS.Timeout;
+  private readonly diffBaseContents = new Map<string, string>();
+  private readonly diffBaseContentProviderDisposable: vscode.Disposable;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly sessionManager: SessionManager,
     private readonly sessionUpdateHandler: SessionUpdateHandler,
+    private readonly workspaceState?: vscode.Memento,
   ) {
     // Configure marked for safe rendering
     marked.setOptions({
@@ -33,6 +59,13 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       this.handleSessionUpdate(update);
     };
     this.sessionUpdateHandler.addListener(this.updateListener);
+
+    this.diffBaseContentProviderDisposable = vscode.workspace.registerTextDocumentContentProvider(
+      'auggie-diff-base',
+      {
+        provideTextDocumentContent: (uri) => this.diffBaseContents.get(uri.toString()) ?? '',
+      },
+    );
   }
 
   /**
@@ -66,10 +99,9 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       localResourceRoots: [this.extensionUri],
     };
 
-    webviewView.webview.html = this.getHtmlContent(webviewView.webview);
-
     // Handle messages from the webview
-    webviewView.webview.onDidReceiveMessage(async (message) => {
+    this.webviewMessageDisposable?.dispose();
+    this.webviewMessageDisposable = webviewView.webview.onDidReceiveMessage(async (message) => {
       switch (message.type) {
         case 'sendPrompt':
           this._hasChatContent = true;
@@ -89,12 +121,33 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
           break;
         case 'executeCommand':
           if (message.command) {
-            await vscode.commands.executeCommand(message.command);
+            await vscode.commands.executeCommand(message.command, ...(message.args || []));
           }
           break;
+        case 'pickContext':
+          await this.handlePickContext(message.kind);
+          break;
+        case 'listContextOptions':
+          this.handleListContextOptions(message.kind);
+          break;
+        case 'persistTasks':
+          await this.persistTaskSnapshot(message.tasks);
+          break;
+        case 'refreshChangedFiles':
+          await this.refreshChangedFiles();
+          break;
+        case 'getFileDiff':
+          await this.sendFileDiff(message.file);
+          break;
+        case 'openChangedFile':
+          await this.openChangedFile(message.file);
+          break;
+        case 'openChangedDiff':
+          await this.openChangedDiff(message.file);
+          break;
         case 'ready':
-          // Webview loaded — send current session state
           this.sendCurrentState();
+          this.scheduleChangedFilesRefresh();
           break;
         case 'renderMarkdown': {
           // Webview requests markdown rendering for history items
@@ -110,8 +163,32 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     });
 
     webviewView.onDidDispose(() => {
+      this.webviewMessageDisposable?.dispose();
+      this.webviewMessageDisposable = undefined;
       this.view = undefined;
+      this.autoRestoreRequested = false;
     });
+
+    webviewView.webview.html = this.getHtmlContent(webviewView.webview);
+    this.scheduleAutoRestore();
+  }
+
+  setAutoRestore(callback: () => Promise<void> | void): void {
+    this.autoRestore = callback;
+    this.scheduleAutoRestore();
+  }
+
+  private scheduleAutoRestore(): void {
+    if (!this.view || !this.autoRestore || this.autoRestoreRequested) { return; }
+    if (this.sessionManager.getActiveSessionId()) { return; }
+
+    this.autoRestoreRequested = true;
+    setTimeout(() => {
+      if (!this.view || this.sessionManager.getActiveSessionId()) { return; }
+      void Promise.resolve(this.autoRestore?.()).catch((e) => {
+        logError('ChatWebviewProvider auto restore failed', e);
+      });
+    }, 750);
   }
 
   /**
@@ -143,11 +220,22 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
         updatedAt: updateData.updatedAt,
       });
     }
+    if (updateData?.sessionUpdate === 'plan') {
+      void this.persistTasksFromPlan(update.sessionId, updateData);
+    }
+    if (
+      updateData?.sessionUpdate === 'tool_call' ||
+      updateData?.sessionUpdate === 'tool_call_update'
+    ) {
+      this.scheduleChangedFilesRefresh();
+    }
 
-    // Only forward to the webview if this is the active session — the
+    // Only forward to the webview if this is the active session - the
     // webview only ever shows one session at a time.
     const activeId = this.sessionManager.getActiveSessionId();
-    if (update.sessionId !== activeId) { return; }
+    if (update.sessionId !== activeId) {
+      return;
+    }
 
     this.postMessage({
       type: 'sessionUpdate',
@@ -192,6 +280,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
         usage: (response as any).usage,
       });
       this.sessionManager.touchHistory(activeId);
+      this.scheduleChangedFilesRefresh();
     } catch (e: any) {
       logError('Prompt failed', e);
       this.postMessage({
@@ -268,6 +357,345 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  private taskStateKey(sessionId: string): string {
+    return `auggie.tasks.${sessionId}`;
+  }
+
+  private normalizeTaskStatus(status: unknown): string {
+    if (status === 'completed' || status === 'complete' || status === 'done') {
+      return 'completed';
+    }
+    if (status === 'in_progress' || status === 'in-progress' || status === 'running' || status === 'active') {
+      return 'in-progress';
+    }
+    return 'pending';
+  }
+
+  private taskText(entry: any): string {
+    return entry?.title || entry?.description || entry?.content || entry?.text || entry?.name || 'Untitled task';
+  }
+
+  private async persistTasksFromPlan(sessionId: string, plan: any): Promise<void> {
+    if (!this.workspaceState || !sessionId || !Array.isArray(plan?.entries)) { return; }
+
+    const tasks: TaskSnapshot[] = plan.entries.map((entry: any, index: number) => ({
+      id: String(entry?.id || entry?.taskId || index),
+      title: this.taskText(entry),
+      status: this.normalizeTaskStatus(entry?.status),
+      rawStatus: String(entry?.status || 'pending'),
+    }));
+
+    await this.workspaceState.update(this.taskStateKey(sessionId), tasks);
+  }
+
+  private async persistTaskSnapshot(tasks: unknown): Promise<void> {
+    const sessionId = this.sessionManager.getActiveSessionId();
+    if (!this.workspaceState || !sessionId || !Array.isArray(tasks)) { return; }
+
+    const normalized: TaskSnapshot[] = tasks.map((task: any, index: number) => ({
+      id: String(task?.id || index),
+      title: this.taskText(task),
+      status: this.normalizeTaskStatus(task?.status),
+      rawStatus: String(task?.rawStatus || task?.status || 'pending'),
+    }));
+
+    await this.workspaceState.update(this.taskStateKey(sessionId), normalized);
+  }
+
+  private getPersistedTasks(sessionId: string | undefined | null): TaskSnapshot[] {
+    if (!this.workspaceState || !sessionId) { return []; }
+    const tasks = this.workspaceState.get<TaskSnapshot[]>(this.taskStateKey(sessionId), []);
+    return Array.isArray(tasks) ? tasks : [];
+  }
+
+  private parseNumstatNumber(value: string): number {
+    if (!value || value === '-') { return 0; }
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  private isSafeChangedFile(file: string): boolean {
+    if (!file) { return false; }
+    if (/^[a-zA-Z]:[\\/]/.test(file) || file.startsWith('/') || file.startsWith('\\')) {
+      return false;
+    }
+    return !file.split(/[\\/]+/).some(part => part === '..' || part === '');
+  }
+
+  private changedFileUri(file: string): vscode.Uri | undefined {
+    if (!this.isSafeChangedFile(file)) { return undefined; }
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri;
+    if (!workspaceRoot) { return undefined; }
+    return vscode.Uri.joinPath(workspaceRoot, ...file.split(/[\\/]+/));
+  }
+
+  private async getChangedFiles(): Promise<ChangedFileSnapshot[]> {
+    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!cwd) { return []; }
+
+    try {
+      const { stdout } = await execFileAsync('git', ['diff', '--numstat', 'HEAD', '--'], {
+        cwd,
+        windowsHide: true,
+        maxBuffer: 1024 * 1024,
+      });
+
+      return stdout
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(Boolean)
+        .map((line) => {
+          const [addedRaw, removedRaw, ...pathParts] = line.split(/\t/);
+          const file = pathParts.join('\t').trim();
+          return {
+            file,
+            added: this.parseNumstatNumber(addedRaw),
+            removed: this.parseNumstatNumber(removedRaw),
+            status: 'changed',
+            source: 'git',
+          };
+        })
+        .filter(change => !!change.file);
+    } catch (e) {
+      logError('Failed to read changed files from git', e);
+      return [];
+    }
+  }
+
+  private scheduleChangedFilesRefresh(): void {
+    if (this.changedFilesRefreshTimer) {
+      clearTimeout(this.changedFilesRefreshTimer);
+    }
+    this.changedFilesRefreshTimer = setTimeout(() => {
+      void this.refreshChangedFiles();
+    }, 650);
+  }
+
+  private async refreshChangedFiles(): Promise<void> {
+    const files = await this.getChangedFiles();
+    this.postMessage({
+      type: 'changedFiles',
+      files,
+    });
+  }
+
+  private async getFileDiff(file: string): Promise<string> {
+    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!cwd || !this.isSafeChangedFile(file)) { return ''; }
+
+    try {
+      const { stdout } = await execFileAsync('git', ['diff', '--', file], {
+        cwd,
+        windowsHide: true,
+        maxBuffer: 2 * 1024 * 1024,
+      });
+      return stdout;
+    } catch (e) {
+      logError(`Failed to read diff for ${file}`, e);
+      return '';
+    }
+  }
+
+  private async sendFileDiff(file: unknown): Promise<void> {
+    if (typeof file !== 'string' || !file) { return; }
+    const diff = await this.getFileDiff(file);
+    this.postMessage({
+      type: 'fileDiff',
+      file,
+      diff,
+    });
+  }
+
+  private async getHeadFileContent(file: string): Promise<string> {
+    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!cwd || !this.isSafeChangedFile(file)) { return ''; }
+
+    try {
+      const { stdout } = await execFileAsync('git', ['show', `HEAD:${file}`], {
+        cwd,
+        windowsHide: true,
+        maxBuffer: 4 * 1024 * 1024,
+      });
+      return stdout;
+    } catch (e) {
+      logError(`Failed to read HEAD content for ${file}`, e);
+      return '';
+    }
+  }
+
+  private async openChangedFile(file: unknown): Promise<void> {
+    if (typeof file !== 'string') { return; }
+    const uri = this.changedFileUri(file);
+    if (!uri) { return; }
+
+    await vscode.window.showTextDocument(uri, { preview: false });
+  }
+
+  private async openChangedDiff(file: unknown): Promise<void> {
+    if (typeof file !== 'string') { return; }
+    const rightUri = this.changedFileUri(file);
+    if (!rightUri) { return; }
+
+    const baseContent = await this.getHeadFileContent(file);
+    const leftUri = vscode.Uri.from({
+      scheme: 'auggie-diff-base',
+      path: `/${file}`,
+      query: String(Date.now()),
+    });
+    this.diffBaseContents.set(leftUri.toString(), baseContent);
+
+    await vscode.commands.executeCommand(
+      'vscode.diff',
+      leftUri,
+      rightUri,
+      `${file} (HEAD <-> Working Tree)`,
+      { preview: false },
+    );
+  }
+
+  /**
+   * Let the user pick workspace context to attach to the next prompt.
+   */
+  private async handlePickContext(kind?: string): Promise<void> {
+    const items: Array<vscode.QuickPickItem & { uri?: vscode.Uri; action?: 'browse' }> = [];
+    const activeEditor = vscode.window.activeTextEditor;
+
+    if (kind === 'selection') {
+      if (!activeEditor || activeEditor.selection.isEmpty) {
+        this.postMessage({
+          type: 'contextNotice',
+          message: 'No code selected',
+        });
+        return;
+      }
+
+      const text = activeEditor.document.getText(activeEditor.selection);
+      const start = activeEditor.selection.start.line + 1;
+      const end = activeEditor.selection.end.line + 1;
+      const label = `${vscode.workspace.asRelativePath(activeEditor.document.uri)}:${start}-${end}`;
+      this.postMessage({
+        type: 'contextPicked',
+        path: activeEditor.document.uri.fsPath,
+        label,
+        content: text,
+        kind: 'selection',
+      });
+      return;
+    }
+
+    if (kind === 'file' || kind === 'folder') {
+      const selected = await vscode.window.showOpenDialog({
+        canSelectFiles: kind === 'file',
+        canSelectFolders: kind === 'folder',
+        canSelectMany: false,
+        openLabel: 'Attach',
+      });
+      const uri = selected?.[0];
+      if (!uri) { return; }
+      this.postMessage({
+        type: 'contextPicked',
+        path: uri.fsPath,
+        label: vscode.workspace.asRelativePath(uri),
+        kind,
+      });
+      return;
+    }
+
+    if (kind === 'recent') {
+      this.handleListContextOptions('recent');
+      return;
+    }
+
+    if (activeEditor) {
+      items.push({
+        label: 'Current file',
+        description: vscode.workspace.asRelativePath(activeEditor.document.uri),
+        uri: activeEditor.document.uri,
+      });
+    }
+
+    for (const editor of vscode.window.visibleTextEditors) {
+      if (activeEditor && editor.document.uri.toString() === activeEditor.document.uri.toString()) {
+        continue;
+      }
+      items.push({
+        label: vscode.workspace.asRelativePath(editor.document.uri),
+        description: 'Open editor',
+        uri: editor.document.uri,
+      });
+    }
+
+    for (const folder of vscode.workspace.workspaceFolders || []) {
+      items.push({
+        label: folder.name,
+        description: 'Workspace folder',
+        uri: folder.uri,
+      });
+    }
+
+    items.push({
+      label: 'Browse for file...',
+      description: 'Choose a file from disk',
+      action: 'browse',
+    });
+
+    const picked = await vscode.window.showQuickPick(items, {
+      placeHolder: 'Add context for Auggie',
+      title: 'Add Context',
+    });
+    if (!picked) { return; }
+
+    let uri = picked.uri;
+    if (picked.action === 'browse') {
+      const selected = await vscode.window.showOpenDialog({
+        canSelectFiles: true,
+        canSelectFolders: false,
+        canSelectMany: false,
+        openLabel: 'Attach',
+      });
+      uri = selected?.[0];
+    }
+    if (!uri) { return; }
+
+    this.postMessage({
+      type: 'contextPicked',
+      path: uri.fsPath,
+      label: vscode.workspace.asRelativePath(uri),
+      kind: 'file',
+    });
+  }
+
+  private handleListContextOptions(kind?: string): void {
+    if (kind !== 'recent') { return; }
+
+    const seen = new Set<string>();
+    const options: Array<{ label: string; path: string; kind: string }> = [];
+    const addUri = (uri: vscode.Uri) => {
+      if (uri.scheme !== 'file' || seen.has(uri.fsPath)) { return; }
+      seen.add(uri.fsPath);
+      options.push({
+        label: vscode.workspace.asRelativePath(uri),
+        path: uri.fsPath,
+        kind: 'file',
+      });
+    };
+
+    for (const editor of vscode.window.visibleTextEditors) {
+      addUri(editor.document.uri);
+    }
+    for (const doc of vscode.workspace.textDocuments) {
+      if (!doc.isUntitled) {
+        addUri(doc.uri);
+      }
+    }
+
+    this.postMessage({
+      type: 'contextOptions',
+      kind,
+      options,
+    });
+  }
+
   /**
    * Send current session state to the webview on load.
    */
@@ -277,6 +705,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     this.postMessage({
       type: 'state',
       activeSessionId: activeId,
+      tasks: this.getPersistedTasks(activeId),
       session: session ? {
         sessionId: session.sessionId,
         agentName: session.agentDisplayName,
@@ -294,7 +723,10 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
    * Post a message to the webview if it exists.
    */
   private postMessage(message: any): void {
-    this.view?.webview.postMessage(message);
+    if (!this.view) {
+      return;
+    }
+    void this.view.webview.postMessage(message);
   }
 
   /**
@@ -364,15 +796,17 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
    * Generate the HTML content for the webview.
    */
   private getHtmlContent(webview: vscode.Webview): string {
-    const nonce = getNonce();
+    const scriptUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, 'media', 'chatWebview.js'),
+    );
 
     return /*html*/ `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
-  <title>ACP Chat</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https: data:; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'unsafe-inline';">
+  <title>Auggie</title>
   <style>
     :root {
       --container-padding: 12px;
@@ -388,6 +822,382 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       flex-direction: column;
       height: 100vh;
       overflow: hidden;
+    }
+
+    .workbench-shell {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      flex: 1;
+    }
+
+    .workbench-header {
+      flex-shrink: 0;
+      border-bottom: 1px solid var(--vscode-panel-border);
+      background: var(--vscode-sideBar-background);
+    }
+
+    .workbench-title-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 38px;
+      padding: 6px 10px;
+    }
+
+    .workbench-title {
+      flex: 1;
+      min-width: 0;
+      font-weight: 600;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .header-icon-btn,
+    .header-mode-btn {
+      height: 26px;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--vscode-foreground);
+      cursor: pointer;
+      font: inherit;
+    }
+
+    .header-icon-btn {
+      width: 28px;
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    .header-mode-btn {
+      padding: 0 8px;
+      color: var(--vscode-descriptionForeground);
+    }
+
+    .header-icon-btn:hover,
+    .header-mode-btn:hover {
+      background: var(--vscode-toolbar-hoverBackground);
+      color: var(--vscode-foreground);
+    }
+
+    .workbench-tabs {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      padding: 0 8px;
+    }
+
+    .workbench-tab {
+      position: relative;
+      min-width: 0;
+      height: 32px;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      background: transparent;
+      color: var(--vscode-descriptionForeground);
+      cursor: pointer;
+      font: inherit;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+
+    .workbench-tab:hover {
+      color: var(--vscode-foreground);
+      background: var(--vscode-toolbar-hoverBackground);
+    }
+
+    .workbench-tab.active {
+      color: var(--vscode-foreground);
+      border-bottom-color: var(--vscode-focusBorder);
+    }
+
+    .tab-count,
+    .delta {
+      font-size: 0.88em;
+      color: var(--vscode-descriptionForeground);
+    }
+
+    .delta.plus {
+      color: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-testing-iconPassed));
+    }
+
+    .delta.minus {
+      color: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-errorForeground));
+    }
+
+    .view-stack {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .view-panel {
+      display: none;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .view-panel.active {
+      display: flex;
+    }
+
+    .thread-view {
+      flex-direction: column;
+    }
+
+    .tasks-view,
+    .edits-view {
+      flex-direction: column;
+      overflow-y: auto;
+      padding: 12px;
+      gap: 10px;
+    }
+
+    .workbench-section-title {
+      font-size: 0.86em;
+      font-weight: 700;
+      color: var(--vscode-descriptionForeground);
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+
+    .task-row,
+    .edit-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px;
+      border: 1px solid var(--vscode-panel-border);
+      border-radius: 6px;
+      background: var(--vscode-editor-background);
+    }
+
+    .edit-row {
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .edit-summary {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      width: 100%;
+      min-width: 0;
+      cursor: pointer;
+    }
+
+    .edit-chevron {
+      width: 12px;
+      flex: 0 0 auto;
+      color: var(--vscode-descriptionForeground);
+      padding-top: 2px;
+      font-size: 0.9em;
+    }
+
+    .task-check {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      border: 1px solid var(--vscode-descriptionForeground);
+      flex-shrink: 0;
+      margin-top: 2px;
+      opacity: 0.8;
+    }
+
+    .task-row.completed .task-check {
+      border-color: var(--vscode-testing-iconPassed);
+      background: var(--vscode-testing-iconPassed);
+      box-shadow: inset 0 0 0 3px var(--vscode-editor-background);
+    }
+
+    .task-row.in-progress .task-check {
+      border-color: var(--vscode-progressBar-background);
+      border-width: 2px;
+    }
+
+    .task-row.pending .task-check {
+      opacity: 0.55;
+    }
+
+    .task-body,
+    .edit-body {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .task-title,
+    .edit-title {
+      font-weight: 600;
+      margin-bottom: 3px;
+    }
+
+    .task-row.completed .task-title {
+      text-decoration: line-through;
+      opacity: 0.75;
+    }
+
+    .task-meta,
+    .edit-meta {
+      color: var(--vscode-descriptionForeground);
+      font-size: 0.92em;
+      line-height: 1.35;
+    }
+
+    .tasks-header-row,
+    .edits-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .tasks-progress,
+    .edits-progress {
+      color: var(--vscode-descriptionForeground);
+      font-size: 0.9em;
+      white-space: nowrap;
+    }
+
+    .tasks-list,
+    .edits-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .edit-file-icon {
+      width: 22px;
+      height: 22px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      margin-top: 1px;
+      border-radius: 4px;
+      background: var(--vscode-badge-background);
+      color: var(--vscode-badge-foreground);
+      font-size: 0.78em;
+      font-weight: 700;
+    }
+
+    .edit-row.running .edit-file-icon,
+    .edit-row.pending .edit-file-icon {
+      background: var(--vscode-progressBar-background);
+      color: var(--vscode-editor-background);
+    }
+
+    .edit-row.completed .edit-file-icon {
+      background: var(--vscode-testing-iconPassed);
+      color: var(--vscode-editor-background);
+    }
+
+    .edit-row.failed .edit-file-icon {
+      background: var(--vscode-testing-iconFailed);
+      color: var(--vscode-editor-background);
+    }
+
+    .edit-delta {
+      flex: 0 0 auto;
+      white-space: nowrap;
+      font-size: 0.9em;
+      padding-top: 1px;
+    }
+
+    .edit-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex: 0 0 auto;
+    }
+
+    .edit-action {
+      height: 22px;
+      padding: 0 7px;
+      border: 1px solid var(--vscode-button-border, transparent);
+      border-radius: 4px;
+      background: transparent;
+      color: var(--vscode-descriptionForeground);
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.88em;
+    }
+
+    .edit-action:hover {
+      background: var(--vscode-toolbar-hoverBackground);
+      color: var(--vscode-foreground);
+    }
+
+    .edit-diff {
+      width: 100%;
+      max-height: 320px;
+      overflow: auto;
+      border: 1px solid var(--vscode-panel-border);
+      border-radius: 4px;
+      background: var(--vscode-textCodeBlock-background, var(--vscode-editor-background));
+      color: var(--vscode-editor-foreground);
+      font-family: var(--vscode-editor-font-family, var(--vscode-font-family));
+      font-size: calc(var(--vscode-font-size) - 1px);
+      line-height: 1.35;
+      padding: 6px 0;
+      white-space: pre;
+    }
+
+    .edit-diff.loading,
+    .diff-truncated {
+      padding: 7px 10px;
+      color: var(--vscode-descriptionForeground);
+      white-space: normal;
+    }
+
+    .diff-line {
+      padding: 0 10px;
+      min-height: 18px;
+    }
+
+    .diff-line.file {
+      color: var(--vscode-descriptionForeground);
+    }
+
+    .diff-line.hunk {
+      color: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-focusBorder));
+      background: color-mix(in srgb, var(--vscode-focusBorder) 10%, transparent);
+    }
+
+    .diff-line.added {
+      color: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-testing-iconPassed));
+      background: color-mix(in srgb, var(--vscode-testing-iconPassed) 10%, transparent);
+    }
+
+    .diff-line.removed {
+      color: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-errorForeground));
+      background: color-mix(in srgb, var(--vscode-errorForeground) 10%, transparent);
+    }
+
+    .empty-workbench-view {
+      margin: auto;
+      max-width: 360px;
+      text-align: center;
+      color: var(--vscode-descriptionForeground);
+      line-height: 1.45;
+    }
+
+    .empty-workbench-view .title {
+      color: var(--vscode-foreground);
+      font-weight: 650;
+      margin-bottom: 6px;
     }
 
     /* Session connected banner */
@@ -530,7 +1340,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       border-top: 1px solid var(--vscode-panel-border);
       margin: 0.6em 0;
     }
-    /* Thought block — collapsible <details> element */
+    /* Thought block - collapsible <details> element */
     .thought-block {
       width: 100%;
       margin-bottom: 4px;
@@ -549,12 +1359,12 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     }
     .thought-block summary::-webkit-details-marker { display: none; }
     .thought-block summary::before {
-      content: '▸';
+      content: '>';
       font-size: 0.9em;
       transition: transform 0.15s;
     }
     .thought-block[open] summary::before {
-      content: '▾';
+      content: 'v';
     }
     .thought-block summary:hover { opacity: 1; }
     .thought-block.streaming summary .thought-indicator {
@@ -593,7 +1403,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       border: 1px solid var(--vscode-inputValidation-errorBorder);
     }
 
-    /* Turn container — groups assistant text + tool calls */
+    /* Turn container - groups assistant text + tool calls */
     .turn {
       display: flex;
       flex-direction: column;
@@ -606,10 +1416,8 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     .turn-tools {
       display: flex;
       flex-direction: column;
-      gap: 2px;
-      padding-left: 10px;
-      border-left: 2px solid var(--vscode-panel-border);
-      margin: 2px 0;
+      gap: 6px;
+      margin: 4px 0;
     }
     .turn-tools-summary {
       font-size: 0.8em;
@@ -622,31 +1430,115 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     .turn-tools-list { }
     .turn-tools-list.collapsed { display: none; }
 
-    /* Compact inline tool call */
+    /* Reviewable activity card */
     .tool-call-inline {
       display: flex;
-      align-items: center;
+      flex-direction: column;
       gap: 6px;
-      padding: 3px 6px;
-      font-size: 0.85em;
-      border-radius: 4px;
-      background: var(--vscode-editorWidget-background);
-      opacity: 0.85;
+      padding: 8px 10px;
+      font-size: 0.9em;
+      border-radius: 6px;
+      background: var(--vscode-editor-background);
+      border: 1px solid var(--vscode-panel-border);
     }
+
+    .tool-call-inline .tc-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .tool-call-inline .tc-chevron,
     .tool-call-inline .tc-icon {
       flex-shrink: 0;
-      width: 14px;
+      width: 16px;
       text-align: center;
     }
+
+    .tool-call-inline .tc-chevron {
+      color: var(--vscode-descriptionForeground);
+    }
+
     .tool-call-inline .tc-icon.pending { color: var(--vscode-badge-foreground); }
     .tool-call-inline .tc-icon.running { color: var(--vscode-progressBar-background); }
     .tool-call-inline .tc-icon.completed { color: var(--vscode-testing-iconPassed); }
     .tool-call-inline .tc-icon.failed { color: var(--vscode-testing-iconFailed); }
     .tool-call-inline .tc-title {
       flex: 1;
+      min-width: 0;
+      font-weight: 600;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+    .tool-call-inline .tc-status {
+      flex-shrink: 0;
+      color: var(--vscode-descriptionForeground);
+      font-size: 0.88em;
+    }
+    .tool-call-inline .tc-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .tool-call-inline .tc-action {
+      min-width: 22px;
+      height: 22px;
+      padding: 0 5px;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--vscode-descriptionForeground);
+      cursor: pointer;
+      font: inherit;
+    }
+    .tool-call-inline .tc-action:hover {
+      color: var(--vscode-foreground);
+      background: var(--vscode-toolbar-hoverBackground);
+    }
+    .tool-call-inline .tc-detail {
+      display: none;
+      padding-left: 40px;
+      color: var(--vscode-descriptionForeground);
+      font-size: 0.92em;
+      line-height: 1.35;
+    }
+    .tool-call-inline.expanded .tc-detail {
+      display: block;
+    }
+    .tc-detail-row {
+      display: grid;
+      grid-template-columns: minmax(72px, max-content) minmax(0, 1fr);
+      gap: 8px;
+      margin: 3px 0;
+    }
+    .tc-detail-label {
+      color: var(--vscode-descriptionForeground);
+    }
+    .tc-detail-value {
+      min-width: 0;
+      color: var(--vscode-foreground);
+      overflow-wrap: anywhere;
+    }
+    .tc-detail-value.mono {
+      font-family: var(--vscode-editor-font-family);
+      font-size: 0.96em;
+    }
+    .tc-output {
+      margin: 7px 0 0;
+      max-height: 180px;
+      overflow: auto;
+      padding: 7px 8px;
+      border-radius: 4px;
+      border: 1px solid var(--vscode-panel-border);
+      background: var(--vscode-textCodeBlock-background);
+      color: var(--vscode-editor-foreground);
+      font-family: var(--vscode-editor-font-family);
+      font-size: 0.92em;
+      line-height: 1.35;
+      white-space: pre-wrap;
     }
 
     /* Legacy standalone tool-call card (for history restore) */
@@ -820,7 +1712,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       flex-wrap: wrap;
     }
 
-    /* Picker wrapper — positioned relatively to anchor the dropdown */
+    /* Picker wrapper - positioned relatively to anchor the dropdown */
     .picker-wrap {
       position: relative;
       min-width: 0;
@@ -865,7 +1757,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       opacity: 0.6;
     }
 
-    /* Picker dropdown — sibling of button, positioned from wrapper */
+    /* Picker dropdown - sibling of button, positioned from wrapper */
     .picker-dropdown {
       display: none;
       position: absolute;
@@ -948,7 +1840,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       margin-top: 4px;
     }
 
-    /* Dynamic config-options picker row — sits inline with legacy pickers */
+    /* Dynamic config-options picker row - sits inline with legacy pickers */
     .picker-row {
       display: contents;
     }
@@ -991,7 +1883,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       flex-shrink: 0;
     }
 
-    /* Send / Stop toggle button — pill-shaped */
+    /* Send / Stop toggle button - pill-shaped */
     .send-stop-btn {
       display: inline-flex;
       align-items: center;
@@ -1093,6 +1985,87 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    .working-indicator {
+      align-self: flex-start;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-width: 95%;
+      min-width: min(420px, 95%);
+      padding: 8px 12px;
+      border-radius: var(--message-radius);
+      background: var(--vscode-editor-background);
+      border: 1px solid var(--vscode-panel-border);
+      color: var(--vscode-descriptionForeground);
+      line-height: 1.4;
+    }
+
+    .working-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .working-indicator .spinner {
+      flex-shrink: 0;
+    }
+
+    .working-text {
+      flex: 1;
+      min-width: 0;
+      color: var(--vscode-foreground);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .working-elapsed {
+      flex-shrink: 0;
+      font-size: 0.9em;
+      color: var(--vscode-descriptionForeground);
+    }
+
+    .activity-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding-left: 22px;
+    }
+
+    .activity-row {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+      font-size: 0.9em;
+      color: var(--vscode-descriptionForeground);
+    }
+
+    .activity-icon {
+      width: 12px;
+      flex-shrink: 0;
+      text-align: center;
+    }
+
+    .activity-row.running .activity-icon {
+      color: var(--vscode-progressBar-background);
+    }
+
+    .activity-row.completed .activity-icon {
+      color: var(--vscode-testing-iconPassed);
+    }
+
+    .activity-row.failed .activity-icon {
+      color: var(--vscode-testing-iconFailed);
+    }
+
+    .activity-label {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
     /* Full-area overlay shown while a session is being loaded via session/load */
     .load-overlay {
       display: none;
@@ -1117,32 +2090,437 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       opacity: 0.9;
     }
     .load-overlay .label { opacity: 0.85; }
+
+
+    /* Auggie Workbench visual pass */
+    body {
+      background: var(--vscode-editor-background);
+    }
+    .session-banner {
+      padding: 10px var(--container-padding) 9px;
+      background: var(--vscode-sideBar-background);
+      border-bottom: 1px solid var(--vscode-sideBar-border, var(--vscode-panel-border));
+    }
+    .session-banner.visible { gap: 9px; }
+    .session-banner .dot {
+      width: 7px;
+      height: 7px;
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--vscode-testing-iconPassed) 18%, transparent);
+    }
+    .session-banner .info { min-width: 0; }
+    .session-banner .agent,
+    .session-banner .cwd {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .messages {
+      padding: 14px var(--container-padding) 12px;
+      gap: 10px;
+    }
+    .message {
+      max-width: 100%;
+      border-radius: 6px;
+    }
+    .message.user {
+      max-width: 92%;
+      background: var(--vscode-input-background);
+      color: var(--vscode-input-foreground);
+      border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
+    }
+    .message.assistant {
+      align-self: stretch;
+      background: transparent;
+      border: none;
+      border-left: 2px solid var(--vscode-focusBorder);
+      border-radius: 0;
+      padding-left: 12px;
+    }
+    .turn {
+      align-self: stretch;
+      max-width: 100%;
+    }
+    .empty-state {
+      align-items: stretch;
+      text-align: left;
+      max-width: 360px;
+      margin: auto;
+      height: auto;
+      padding: 28px 18px;
+      gap: 8px;
+    }
+    .empty-state .icon { display: none; }
+    .empty-state .title {
+      font-size: 1.25em;
+      font-weight: 650;
+      margin-bottom: 2px;
+    }
+    .empty-state .subtitle {
+      font-size: 0.92em;
+      opacity: 0.72;
+      margin-bottom: 10px;
+    }
+    .empty-state .actions {
+      flex-direction: row;
+      max-width: none;
+      width: auto;
+      flex-wrap: wrap;
+    }
+    .empty-state .action-btn {
+      padding: 5px 10px;
+      border: 1px solid var(--vscode-button-border, transparent);
+      border-radius: 4px;
+    }
+    .input-area {
+      border-top: 1px solid var(--vscode-sideBar-border, var(--vscode-panel-border));
+      background: var(--vscode-sideBar-background);
+      padding-bottom: 2px;
+    }
+    .input-editor-wrap {
+      padding: 6px var(--container-padding) 0;
+    }
+    .input-editor-wrap textarea {
+      min-height: 54px;
+      padding: 9px 10px;
+      border-radius: 6px;
+      border-color: var(--vscode-input-border, var(--vscode-panel-border));
+      background: var(--vscode-input-background);
+    }
+    .input-editor-wrap textarea:focus {
+      border-color: var(--vscode-focusBorder);
+      box-shadow: 0 0 0 1px var(--vscode-focusBorder);
+    }
+
+
+    /* Augment-inspired composer and command palette pass */
+    .input-area {
+      padding: 8px var(--container-padding) 10px;
+      gap: 6px;
+    }
+    .input-toolbar {
+      padding: 0;
+      gap: 6px;
+    }
+    .composer-context-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 26px;
+      overflow: hidden;
+    }
+    .composer-icon-btn,
+    .composer-send-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--vscode-foreground);
+      font: inherit;
+      cursor: pointer;
+      opacity: 0.82;
+      height: 24px;
+      min-width: 24px;
+      padding: 0 6px;
+    }
+    .composer-icon-btn:hover,
+    .composer-send-btn:hover {
+      opacity: 1;
+      background: var(--vscode-toolbar-hoverBackground);
+    }
+    .picker-icon:empty { display: none; }
+    .composer-icon-btn.active {
+      opacity: 1;
+      background: var(--vscode-toolbar-activeBackground, var(--vscode-toolbar-hoverBackground));
+    }
+    .context-menu {
+      display: none;
+      position: absolute;
+      left: var(--container-padding);
+      bottom: calc(100% - 36px);
+      width: min(330px, calc(100% - 24px));
+      max-height: min(330px, 52vh);
+      overflow-y: auto;
+      z-index: 240;
+      padding: 5px;
+      border-radius: 6px;
+      background: var(--vscode-dropdown-background);
+      color: var(--vscode-dropdown-foreground);
+      border: 1px solid var(--vscode-dropdown-border);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    }
+    .context-menu.open { display: block; }
+    .context-menu-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      width: 100%;
+      min-height: 30px;
+      padding: 5px 8px;
+      border: none;
+      border-radius: 4px;
+      color: inherit;
+      background: transparent;
+      text-align: left;
+      font: inherit;
+      cursor: pointer;
+    }
+    .context-menu-item:hover,
+    .context-menu-item.focused {
+      background: var(--vscode-list-hoverBackground);
+    }
+    .context-menu-item.disabled {
+      cursor: default;
+      opacity: 0.65;
+    }
+    .context-menu-item.disabled:hover {
+      background: transparent;
+    }
+    .context-menu-item .main {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .context-menu-item .icon {
+      width: 18px;
+      text-align: center;
+      opacity: 0.82;
+      flex: 0 0 auto;
+    }
+    .context-menu-item .label {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-weight: 500;
+    }
+    .context-menu-item .chevron {
+      opacity: 0.7;
+      flex: 0 0 auto;
+    }
+    .context-menu-separator {
+      height: 1px;
+      margin: 5px 4px;
+      background: var(--vscode-panel-border);
+    }
+    .context-menu-note {
+      padding: 6px 8px 5px;
+      color: var(--vscode-descriptionForeground);
+      font-size: calc(var(--vscode-font-size) - 1px);
+    }
+    .composer-context-chips {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      overflow-x: auto;
+      flex: 1;
+    }
+    .composer-context-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      max-width: 52%;
+      height: 24px;
+      padding: 0 8px;
+      border-radius: 4px;
+      background: var(--vscode-badge-background);
+      color: var(--vscode-badge-foreground);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-size: calc(var(--vscode-font-size) - 1px);
+      border: none;
+      cursor: pointer;
+      flex: 0 1 auto;
+    }
+    .composer-context-chip .label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .composer-context-chip .remove {
+      opacity: 0.75;
+      flex: 0 0 auto;
+      padding-left: 2px;
+    }
+    .composer-context-chip:hover {
+      background: var(--vscode-list-hoverBackground);
+      color: var(--vscode-foreground);
+    }
+    .input-editor-wrap {
+      padding: 0;
+    }
+    .input-editor-wrap textarea {
+      min-height: 82px;
+      border-radius: 4px;
+      border-color: var(--vscode-panel-border);
+      background: var(--vscode-editor-background);
+    }
+    .input-send-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 0;
+    }
+    .composer-controls-left,
+    .composer-controls-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+    }
+    .composer-auto-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      height: 24px;
+      padding: 0 9px 0 5px;
+      border: 1px solid var(--vscode-panel-border);
+      border-radius: 999px;
+      font-size: calc(var(--vscode-font-size) - 1px);
+      opacity: 0.9;
+    }
+    .composer-auto-pill:hover {
+      background: var(--vscode-toolbar-hoverBackground);
+    }
+    .composer-auto-dot {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--vscode-input-background);
+      border: 1px solid var(--vscode-panel-border);
+    }
+    .send-stop-btn {
+      min-width: 32px;
+      height: 28px;
+      border-radius: 4px;
+      padding: 0 10px;
+    }
+    .slash-popup {
+      bottom: calc(100% - 10px);
+      left: var(--container-padding);
+      right: var(--container-padding);
+      max-height: min(430px, 62vh);
+      padding: 8px 0;
+      border-radius: 6px;
+      background: var(--vscode-quickInput-background, var(--vscode-dropdown-background));
+      border: 1px solid var(--vscode-quickInputList-focusBackground, var(--vscode-dropdown-border));
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    }
+    .slash-popup-header {
+      padding: 8px 12px 6px;
+      font-size: 1.02em;
+      font-weight: 650;
+      color: var(--vscode-foreground);
+      opacity: 0.95;
+    }
+    .slash-popup-section {
+      padding: 10px 12px 5px;
+      font-size: 0.88em;
+      font-weight: 600;
+      color: var(--vscode-descriptionForeground);
+      border-top: 1px solid var(--vscode-panel-border);
+      margin-top: 6px;
+    }
+    .slash-popup-section.first {
+      border-top: none;
+      margin-top: 0;
+      padding-top: 4px;
+    }
+    .slash-popup-item {
+      display: block;
+      padding: 7px 12px 8px;
+      border-radius: 0;
+    }
+    .slash-popup-item .cmd-name {
+      display: block;
+      font-weight: 650;
+      margin-bottom: 2px;
+    }
+    .slash-popup-item .cmd-desc {
+      display: block;
+      font-size: 0.92em;
+      opacity: 0.82;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
   </style>
 </head>
 <body>
-  <div class="session-banner" id="sessionBanner">
-    <span class="dot"></span>
-    <div class="info">
-      <div class="agent" id="bannerAgent"></div>
-      <div class="cwd" id="bannerCwd"></div>
-    </div>
-    <span class="status" id="status"></span>
-  </div>
-
-  <div class="messages" id="messages">
-    <div class="empty-state" id="emptyState">
-      <div class="icon">🤖</div>
-      <div class="title">ACP Chat</div>
-      <div class="subtitle">Connect to an AI coding agent to start chatting.</div>
-      <div class="actions">
-        <button class="action-btn primary" id="welcomeConnectAgent">
-          🔌 Connect to Agent
-        </button>
-        <button class="action-btn secondary" id="welcomeAddAgent">
-          ⚙ Add Agent
-        </button>
+  <div class="workbench-shell">
+    <div class="workbench-header">
+      <div class="workbench-title-row">
+        <button class="header-icon-btn" id="headerMenuBtn" title="Threads">=</button>
+        <div class="workbench-title" id="workbenchTitle">Auggie</div>
+        <div class="header-actions">
+          <button class="header-mode-btn" id="headerAgentModeBtn" title="Current mode">Agent</button>
+          <button class="header-icon-btn" id="headerNewThreadBtn" title="New thread">+</button>
+        </div>
       </div>
-      <div class="hint">or press <kbd>Ctrl+Shift+A</kbd> anytime</div>
+      <div class="workbench-tabs" role="tablist" aria-label="Auggie views">
+        <button class="workbench-tab active" data-view="thread" role="tab" aria-selected="true">Thread</button>
+        <button class="workbench-tab" data-view="tasks" role="tab" aria-selected="false">Tasks <span class="tab-count" id="tasksTabCount">0/0</span></button>
+        <button class="workbench-tab" data-view="edits" role="tab" aria-selected="false">Edits <span class="delta plus" id="editsAddCount">+0</span> <span class="delta minus" id="editsDeleteCount">-0</span></button>
+      </div>
+    </div>
+
+    <div class="session-banner" id="sessionBanner">
+      <span class="dot"></span>
+      <div class="info">
+        <div class="agent" id="bannerAgent"></div>
+        <div class="cwd" id="bannerCwd"></div>
+      </div>
+      <span class="status" id="status"></span>
+    </div>
+
+    <div class="view-stack">
+      <div class="view-panel thread-view active" id="threadView" role="tabpanel">
+        <div class="messages" id="messages">
+          <div class="empty-state" id="emptyState">
+            <div class="icon">A</div>
+            <div class="title">Auggie</div>
+            <div class="subtitle">Ready to work in this codebase. Start Auggie or open an existing thread.</div>
+            <div class="actions">
+              <button class="action-btn primary" id="welcomeConnectAgent">
+                Start Auggie
+              </button>
+              <button class="action-btn secondary" id="welcomeAddAgent">
+                Settings
+              </button>
+            </div>
+            <div class="hint">or press <kbd>Ctrl+Shift+A</kbd> anytime</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="view-panel tasks-view" id="tasksView" role="tabpanel">
+        <div class="tasks-header-row">
+          <div class="workbench-section-title">Tasks</div>
+          <div class="tasks-progress" id="tasksProgress">0 of 0 complete</div>
+        </div>
+        <div class="tasks-list" id="tasksList"></div>
+        <div class="empty-workbench-view" id="tasksEmptyState">
+          <div class="title">No active task list yet</div>
+          <div>When Auggie sends a plan, its steps will appear here with live status.</div>
+        </div>
+      </div>
+
+      <div class="view-panel edits-view" id="editsView" role="tabpanel">
+        <div class="edits-header-row">
+          <div class="workbench-section-title">Edits</div>
+          <div class="edits-progress" id="editsProgress">0 changed files</div>
+        </div>
+        <div class="edits-list" id="editsList"></div>
+        <div class="empty-workbench-view" id="editsEmptyState">
+          <div class="title">No changed files yet</div>
+          <div>When Auggie edits files, they will appear here for review.</div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1154,34 +2532,72 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     <div class="input-toolbar">
       <!-- Dynamic config-options pickers (ACP "Session Config Options"). -->
       <div class="picker-row" id="configOptionsContainer"></div>
-      <!-- Legacy pickers — used only when the agent has not migrated to configOptions -->
+      <!-- Legacy pickers - used only when the agent has not migrated to configOptions -->
       <div class="picker-wrap hidden" id="modePickerWrap">
         <button class="picker-btn" id="modePickerBtn" title="Select mode">
-          <span class="picker-icon">⚡</span>
+          <span class="picker-icon">!</span>
           <span class="picker-label" id="modePickerLabel">Mode</span>
-          <span class="picker-chevron">▾</span>
+          <span class="picker-chevron">v</span>
         </button>
         <div class="picker-dropdown" id="modeDropdown"></div>
       </div>
       <div class="picker-wrap hidden" id="modelPickerWrap">
         <button class="picker-btn" id="modelPickerBtn" title="Select model">
-          <span class="picker-icon">🧠</span>
+          <span class="picker-icon"></span>
           <span class="picker-label" id="modelPickerLabel">Model</span>
-          <span class="picker-chevron">▾</span>
+          <span class="picker-chevron">v</span>
         </button>
         <div class="picker-dropdown" id="modelDropdown"></div>
       </div>
       <span class="toolbar-spacer"></span>
     </div>
+    <div class="context-menu" id="contextMenu" role="menu" aria-label="Add context">
+      <button class="context-menu-item" data-action="default" role="menuitem">
+        <span class="main"><span class="icon">@</span><span class="label">Default Context</span></span>
+      </button>
+      <button class="context-menu-item" data-action="file" role="menuitem">
+        <span class="main"><span class="icon">F</span><span class="label">Files</span></span>
+        <span class="chevron">></span>
+      </button>
+      <button class="context-menu-item" data-action="folder" role="menuitem">
+        <span class="main"><span class="icon">D</span><span class="label">Folders</span></span>
+        <span class="chevron">></span>
+      </button>
+      <button class="context-menu-item" data-action="recent" role="menuitem">
+        <span class="main"><span class="icon">R</span><span class="label">Recently Opened Files</span></span>
+        <span class="chevron">></span>
+      </button>
+      <button class="context-menu-item" data-action="rules" role="menuitem">
+        <span class="main"><span class="icon">G</span><span class="label">Rules</span></span>
+        <span class="chevron">></span>
+      </button>
+      <div class="context-menu-separator"></div>
+      <button class="context-menu-item" data-action="clear" role="menuitem">
+        <span class="main"><span class="icon">x</span><span class="label">Clear Context</span></span>
+      </button>
+    </div>
+    <div class="composer-context-row" id="composerContextRow">
+      <button class="composer-icon-btn" id="contextMentionBtn" title="Add context">@</button>
+      <button class="composer-icon-btn" id="composerAttachBtn" title="Add selected code">I</button>
+      <button class="composer-icon-btn" id="composerNewThreadBtn" title="New thread">New</button>
+      <div class="composer-context-chips" id="composerContextChips"></div>
+    </div>
     <div class="input-editor-wrap">
       <textarea
         id="promptInput"
-        placeholder="Type a message..."
+        placeholder="Instruct Auggie, @ for context, / for commands"
         rows="2"
       ></textarea>
     </div>
     <div class="input-send-row">
-      <button class="send-stop-btn send" id="sendStopBtn">Send</button>
+      <div class="composer-controls-left">
+        <span class="composer-auto-pill" title="Toggle agent mode. Auto OFF requires approval for most commands."><span class="composer-auto-dot"></span>Auto</span>
+      </div>
+      <div class="composer-controls-right">
+        <button class="composer-icon-btn" id="bottomAttachBtn" title="Attach file">+</button>
+        <button class="composer-icon-btn" id="enhancePromptBtn" title="Prompt Enhancer">*</button>
+        <button class="send-stop-btn send" id="sendStopBtn">Send</button>
+      </div>
     </div>
   </div>
 
@@ -1191,1347 +2607,16 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
   <!-- Overlay shown during session/load history replay -->
   <div class="load-overlay" id="loadOverlay" role="status" aria-live="polite">
     <div class="spinner"></div>
-    <div class="label">Loading conversation history…</div>
+    <div class="label">Loading conversation history...</div>
   </div>
 
-  <script nonce="${nonce}">
-    const vscode = acquireVsCodeApi();
-    const messagesEl = document.getElementById('messages');
-    const emptyState = document.getElementById('emptyState');
-    const promptInput = document.getElementById('promptInput');
-    const sendStopBtn = document.getElementById('sendStopBtn');
-    const statusEl = document.getElementById('status');
-    const sessionBanner = document.getElementById('sessionBanner');
-    const bannerAgent = document.getElementById('bannerAgent');
-    const bannerCwd = document.getElementById('bannerCwd');
-    const inputArea = document.getElementById('inputArea');
-    const resizeHandle = document.getElementById('resizeHandle');
-    const slashPopup = document.getElementById('slashPopup');
-
-    // Picker elements
-    const modePickerWrap = document.getElementById('modePickerWrap');
-    const modePickerBtn = document.getElementById('modePickerBtn');
-    const modePickerLabel = document.getElementById('modePickerLabel');
-    const modeDropdown = document.getElementById('modeDropdown');
-    const modelPickerWrap = document.getElementById('modelPickerWrap');
-    const modelPickerBtn = document.getElementById('modelPickerBtn');
-    const modelPickerLabel = document.getElementById('modelPickerLabel');
-    const modelDropdown = document.getElementById('modelDropdown');
-    const configOptionsContainer = document.getElementById('configOptionsContainer');
-
-    let hasActiveSession = false;
-    let isProcessing = false;
-
-    // Modes / models state (legacy fallback path)
-    let availableModes = [];
-    let currentModeId = null;
-    let availableModels = [];
-    let currentModelId = null;
-
-    // ACP Session Config Options state (preferred path)
-    let configOptions = [];        // SessionConfigOption[]
-    let useConfigOptions = false;  // true when the agent provided configOptions
-
-    // Thinking state
-    let currentThoughtEl = null;
-    let currentThoughtTextEl = null;
-    let currentThoughtText = '';
-    let thoughtStartTime = null;
-    let thoughtEndTime = null;
-
-    // Slash commands state
-    let availableCommands = [];
-    let slashPopupSelectedIdx = -1;
-    let slashFilteredCommands = [];
-    let savedPlaceholder = 'Type a message...';
-
-    function updatePlaceholder() {
-      savedPlaceholder = availableCommands.length > 0
-        ? 'Type a message or / for commands...'
-        : 'Type a message...';
-      if (!promptInput.value.startsWith('/')) {
-        promptInput.placeholder = savedPlaceholder;
-      }
-    }
-
-    // --- State persistence ---
-    let chatHistory = [];
-    let sessionState = null;
-
-    function saveState() {
-      vscode.setState({ chatHistory, sessionState, hasActiveSession });
-    }
-
-    function restoreState() {
-      const saved = vscode.getState();
-      if (!saved) return;
-
-      chatHistory = saved.chatHistory || [];
-      sessionState = saved.sessionState || null;
-      hasActiveSession = saved.hasActiveSession || false;
-
-      if (hasActiveSession && sessionState) {
-        showSessionConnectedFromState(sessionState);
-      }
-
-      const assistantItems = [];
-      for (let i = 0; i < chatHistory.length; i++) {
-        const item = chatHistory[i];
-        switch (item.kind) {
-          case 'message':
-            addMessageDOM(item.role, item.text);
-            if (item.role === 'assistant') {
-              assistantItems.push({ index: i, text: item.text });
-            }
-            break;
-          case 'thought':
-            addThoughtDOM(item.text, item.durationSec || 0);
-            break;
-          case 'toolCall':
-            addToolCallDOM(item.toolCallId, item.title, item.status);
-            break;
-          case 'plan':
-            addPlanDOM(item.plan);
-            break;
-        }
-      }
-
-      // Request markdown rendering for all restored assistant messages
-      if (assistantItems.length > 0) {
-        vscode.postMessage({ type: 'renderMarkdown', items: assistantItems });
-      }
-    }
-
-    // Start with input disabled
-    if (inputArea) inputArea.classList.add('disabled');
-    let currentAssistantEl = null;
-    let currentAssistantText = '';
-    let currentTurnEl = null;       // .turn container for current response
-    let currentToolsListEl = null;  // .turn-tools-list inside current turn
-    let currentToolsCountEl = null; // .turn-tools-summary counter
-    let currentToolCount = 0;
-    let toolCalls = {};
-
-    // --- Resize handle ---
-    let inputAreaHeight = 140;
-    const MIN_INPUT_HEIGHT = 90;
-    const MAX_INPUT_HEIGHT = 400;
-
-    function applyInputHeight(h) {
-      inputAreaHeight = Math.max(MIN_INPUT_HEIGHT, Math.min(MAX_INPUT_HEIGHT, h));
-      inputArea.style.height = inputAreaHeight + 'px';
-    }
-
-    resizeHandle.addEventListener('mousedown', (e) => {
-      e.preventDefault();
-      const startY = e.clientY;
-      const startHeight = inputArea.offsetHeight;
-      function onMove(ev) {
-        const delta = startY - ev.clientY;
-        applyInputHeight(startHeight + delta);
-      }
-      function onUp() {
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup', onUp);
-      }
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
-    });
-
-    // --- Auto-resize textarea (within the input area constraints) ---
-    promptInput.addEventListener('input', () => {
-      // Slash command autocomplete
-      const text = promptInput.value;
-      if (text.startsWith('/') && availableCommands.length > 0) {
-        const firstSpace = text.indexOf(' ');
-        const query = (firstSpace > 0 ? text.slice(1, firstSpace) : text.slice(1)).toLowerCase();
-        if (firstSpace < 0) {
-          // Still typing command name — show filtered popup
-          slashFilteredCommands = availableCommands.filter(c =>
-            c.name.toLowerCase().startsWith(query)
-          );
-          if (slashFilteredCommands.length > 0) {
-            renderSlashPopup(slashFilteredCommands);
-            slashPopup.classList.add('open');
-            slashPopupSelectedIdx = 0;
-            highlightSlashItem(0);
-          } else {
-            slashPopup.classList.remove('open');
-          }
-        } else {
-          slashPopup.classList.remove('open');
-        }
-      } else {
-        slashPopup.classList.remove('open');
-        if (!text.startsWith('/')) {
-          promptInput.placeholder = savedPlaceholder;
-        }
-      }
-    });
-
-    // Send on Enter (Shift+Enter for newline)
-    promptInput.addEventListener('keydown', (e) => {
-      // Slash popup navigation
-      if (slashPopup.classList.contains('open')) {
-        if (e.key === 'ArrowDown') {
-          e.preventDefault();
-          slashPopupSelectedIdx = Math.min(slashPopupSelectedIdx + 1, slashFilteredCommands.length - 1);
-          highlightSlashItem(slashPopupSelectedIdx);
-          return;
-        }
-        if (e.key === 'ArrowUp') {
-          e.preventDefault();
-          slashPopupSelectedIdx = Math.max(slashPopupSelectedIdx - 1, 0);
-          highlightSlashItem(slashPopupSelectedIdx);
-          return;
-        }
-        if (e.key === 'Tab') {
-          e.preventDefault();
-          selectSlashCommand(slashFilteredCommands[slashPopupSelectedIdx]);
-          return;
-        }
-        if (e.key === 'Enter' && !e.shiftKey) {
-          e.preventDefault();
-          selectSlashCommand(slashFilteredCommands[slashPopupSelectedIdx]);
-          return;
-        }
-        if (e.key === 'Escape') {
-          e.preventDefault();
-          slashPopup.classList.remove('open');
-          return;
-        }
-      }
-
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        if (isProcessing) {
-          handleCancel();
-        } else {
-          handleSend();
-        }
-      }
-    });
-
-    function handleSend() {
-      const text = promptInput.value.trim();
-      if (!text || isProcessing) return;
-
-      addMessage('user', text);
-      promptInput.value = '';
-      vscode.postMessage({ type: 'sendPrompt', text });
-    }
-
-    function handleCancel() {
-      vscode.postMessage({ type: 'cancelTurn' });
-    }
-
-    function execCmd(command) {
-      vscode.postMessage({ type: 'executeCommand', command });
-    }
-
-    // Wire up buttons
-    sendStopBtn.addEventListener('click', () => {
-      if (isProcessing) {
-        handleCancel();
-      } else {
-        handleSend();
-      }
-    });
-
-    const welcomeConnectAgent = document.getElementById('welcomeConnectAgent');
-    const welcomeAddAgent = document.getElementById('welcomeAddAgent');
-    if (welcomeConnectAgent) welcomeConnectAgent.addEventListener('click', () => execCmd('acp.connectAgent'));
-    if (welcomeAddAgent) welcomeAddAgent.addEventListener('click', () => execCmd('acp.addAgent'));
-
-    // --- Send/Stop toggle ---
-    function setProcessing(processing) {
-      isProcessing = processing;
-      if (processing) {
-        sendStopBtn.className = 'send-stop-btn stop';
-        sendStopBtn.textContent = '■ Stop';
-        sendStopBtn.disabled = false;
-        promptInput.disabled = true;
-        statusEl.innerHTML = '<span class="spinner"></span>';
-      } else {
-        sendStopBtn.className = 'send-stop-btn send';
-        sendStopBtn.textContent = 'Send';
-        sendStopBtn.disabled = false;
-        promptInput.disabled = false;
-        statusEl.textContent = '';
-      }
-    }
-
-    // --- Session/load overlay ---
-    const loadOverlay = document.getElementById('loadOverlay');
-    // True while a session/load replay is in progress. Used to suppress
-    // per-chunk markdown rendering until the replay finishes.
-    let isLoadingSession = false;
-
-    function handleLoadSessionStart() {
-      isLoadingSession = true;
-      // Reset all chat state; behaves like clearChat but keeps the session
-      // banner / input area structure intact.
-      chatHistory = [];
-      saveState();
-      currentAssistantEl = null;
-      currentAssistantText = '';
-      toolCalls = {};
-      currentTurnEl = null;
-      currentToolsListEl = null;
-      currentToolsCountEl = null;
-      currentToolCount = 0;
-      currentThoughtEl = null;
-      currentThoughtTextEl = null;
-      currentThoughtText = '';
-      thoughtStartTime = null;
-      thoughtEndTime = null;
-      messagesEl.innerHTML = '';
-      if (emptyState) {
-        messagesEl.appendChild(emptyState);
-        emptyState.style.display = 'none';
-      }
-      if (loadOverlay) loadOverlay.classList.add('visible');
-      if (inputArea) inputArea.classList.add('disabled');
-      setProcessing(false);
-    }
-
-    function handleLoadSessionEnd(ok) {
-      isLoadingSession = false;
-      // Commit any trailing assistant turn captured during the replay.
-      finalizeCurrentAssistantTurn();
-      if (loadOverlay) loadOverlay.classList.remove('visible');
-      if (inputArea) inputArea.classList.remove('disabled');
-      // Batch-render markdown for every assistant message captured during
-      // the replay (avoids per-chunk render storms).
-      const items = [];
-      for (let i = 0; i < chatHistory.length; i++) {
-        const item = chatHistory[i];
-        if (item.kind === 'message' && item.role === 'assistant') {
-          items.push({ index: i, text: item.text });
-        }
-      }
-      if (items.length > 0) {
-        vscode.postMessage({ type: 'renderMarkdown', items });
-      }
-      scrollToBottom();
-      if (!ok) {
-        addMessage('error', 'Failed to load session history.');
-      }
-    }
-
-    function handleSessionInfoUpdate(title) {
-      if (!sessionState) return;
-      if (typeof title === 'string') {
-        sessionState.title = title;
-      } else if (title === null) {
-        delete sessionState.title;
-      }
-      saveState();
-      if (bannerAgent) {
-        bannerAgent.textContent = sessionState.title || sessionState.agentName || 'Agent';
-      }
-    }
-
-    // --- Mode / Model pickers ---
-
-    // --- Slash command helpers ---
-    function renderSlashPopup(commands) {
-      slashPopup.innerHTML = '<div class="slash-popup-header">Commands</div>';
-      commands.forEach((cmd, i) => {
-        const item = document.createElement('div');
-        item.className = 'slash-popup-item' + (i === 0 ? ' active' : '');
-        item.dataset.index = String(i);
-        item.innerHTML =
-          '<span class="cmd-name">/' + escapeHtml(cmd.name) + '</span>' +
-          '<span class="cmd-desc">' + escapeHtml(cmd.description) + '</span>';
-        item.addEventListener('click', () => selectSlashCommand(cmd));
-        item.addEventListener('mouseenter', () => {
-          slashPopupSelectedIdx = i;
-          highlightSlashItem(i);
-        });
-        slashPopup.appendChild(item);
-      });
-    }
-
-    function highlightSlashItem(idx) {
-      const items = slashPopup.querySelectorAll('.slash-popup-item');
-      items.forEach((el, i) => el.classList.toggle('active', i === idx));
-      if (items[idx]) items[idx].scrollIntoView({ block: 'nearest' });
-    }
-
-    function selectSlashCommand(cmd) {
-      slashPopup.classList.remove('open');
-      if (!cmd) return;
-
-      if (cmd.input) {
-        // Command expects input — insert "/name " and set placeholder to hint
-        promptInput.value = '/' + cmd.name + ' ';
-        promptInput.placeholder = cmd.input.hint || 'Type input...';
-        promptInput.focus();
-      } else {
-        // No input required — send immediately
-        promptInput.value = '/' + cmd.name;
-        handleSend();
-      }
-    }
-
-    // --- Mode / Model pickers (cont.) ---
-    function updateModePicker(modes) {
-      if (!modes || !modes.availableModes || modes.availableModes.length === 0) {
-        modePickerWrap.classList.add('hidden');
-        availableModes = [];
-        currentModeId = null;
-        return;
-      }
-      availableModes = modes.availableModes;
-      currentModeId = modes.currentModeId || null;
-      modePickerWrap.classList.remove('hidden');
-      const current = availableModes.find(m => m.id === currentModeId);
-      modePickerLabel.textContent = current ? current.name : 'Mode';
-      modePickerLabel.title = current && current.description ? current.description : '';
-      renderModeDropdown();
-    }
-
-    function renderModeDropdown() {
-      modeDropdown.innerHTML = '';
-      for (const mode of availableModes) {
-        const item = document.createElement('div');
-        item.className = 'picker-dropdown-item' + (mode.id === currentModeId ? ' selected' : '');
-        item.dataset.desc = mode.description || '';
-        if (mode.description) item.title = mode.description;
-        item.innerHTML =
-          '<span class="check">' + (mode.id === currentModeId ? '✓' : '') + '</span>' +
-          '<span class="item-label">' + escapeHtml(mode.name) + '</span>';
-        item.addEventListener('click', (e) => {
-          e.stopPropagation();
-          closePickers();
-          if (mode.id !== currentModeId) {
-            currentModeId = mode.id;
-            const current = availableModes.find(m => m.id === currentModeId);
-            modePickerLabel.textContent = current ? current.name : 'Mode';
-            renderModeDropdown();
-            vscode.postMessage({ type: 'setMode', modeId: mode.id });
-          }
-        });
-        modeDropdown.appendChild(item);
-      }
-    }
-
-    function updateModelPicker(models) {
-      if (!models || !models.availableModels || models.availableModels.length === 0) {
-        modelPickerWrap.classList.add('hidden');
-        availableModels = [];
-        currentModelId = null;
-        return;
-      }
-      availableModels = models.availableModels;
-      currentModelId = models.currentModelId || null;
-      modelPickerWrap.classList.remove('hidden');
-      const current = availableModels.find(m => m.modelId === currentModelId);
-      modelPickerLabel.textContent = current ? current.name : 'Model';
-      modelPickerLabel.title = current && current.description ? current.description : '';
-      renderModelDropdown();
-    }
-
-    function renderModelDropdown() {
-      modelDropdown.innerHTML = '';
-      for (const model of availableModels) {
-        const item = document.createElement('div');
-        item.className = 'picker-dropdown-item' + (model.modelId === currentModelId ? ' selected' : '');
-        item.dataset.desc = model.description || '';
-        if (model.description) item.title = model.description;
-        item.innerHTML =
-          '<span class="check">' + (model.modelId === currentModelId ? '✓' : '') + '</span>' +
-          '<span class="item-label">' + escapeHtml(model.name) + '</span>';
-        item.addEventListener('click', (e) => {
-          e.stopPropagation();
-          closePickers();
-          if (model.modelId !== currentModelId) {
-            currentModelId = model.modelId;
-            const current = availableModels.find(m => m.modelId === currentModelId);
-            modelPickerLabel.textContent = current ? current.name : 'Model';
-            renderModelDropdown();
-            vscode.postMessage({ type: 'setModel', modelId: model.modelId });
-          }
-        });
-        modelDropdown.appendChild(item);
-      }
-    }
-
-    // --- ACP Session Config Options ---
-
-    function iconForCategory(cat) {
-      switch (cat) {
-        case 'mode': return '⚡';
-        case 'model': return '🧠';
-        case 'thought_level': return '💭';
-        default: return '⚙';
-      }
-    }
-
-    function isGroupedOptions(opt) {
-      const arr = opt && opt.options;
-      if (!Array.isArray(arr) || arr.length === 0) return false;
-      const first = arr[0];
-      return !!(first && typeof first.group === 'string' && Array.isArray(first.options));
-    }
-
-    function findOptionValue(opt, value) {
-      if (!opt || !Array.isArray(opt.options)) return null;
-      if (isGroupedOptions(opt)) {
-        for (const group of opt.options) {
-          if (!group || !Array.isArray(group.options)) continue;
-          const hit = group.options.find(v => v && v.value === value);
-          if (hit) return hit;
-        }
-        return null;
-      }
-      return opt.options.find(v => v && v.value === value) || null;
-    }
-
-    function pickerLabelFor(opt) {
-      const v = findOptionValue(opt, opt.currentValue);
-      return v && v.name ? v.name : (opt.name || 'Option');
-    }
-
-    function pickerTooltipFor(opt) {
-      const v = findOptionValue(opt, opt.currentValue);
-      return (v && v.description) || opt.description || opt.name || '';
-    }
-
-    function renderConfigPickers(opts) {
-      configOptionsContainer.innerHTML = '';
-      if (!Array.isArray(opts)) return;
-
-      for (const opt of opts) {
-        // Spec: ignore unknown types and empty option lists
-        if (!opt || opt.type !== 'select') continue;
-        if (!Array.isArray(opt.options) || opt.options.length === 0) continue;
-
-        const wrap = document.createElement('div');
-        wrap.className = 'picker-wrap';
-        wrap.dataset.configId = opt.id;
-
-        const btn = document.createElement('button');
-        btn.className = 'picker-btn';
-        btn.title = pickerTooltipFor(opt);
-        btn.innerHTML =
-          '<span class="picker-icon">' + iconForCategory(opt.category) + '</span>' +
-          '<span class="picker-label"></span>' +
-          '<span class="picker-chevron">▾</span>';
-        btn.querySelector('.picker-label').textContent = pickerLabelFor(opt);
-        wrap.appendChild(btn);
-
-        const dropdown = document.createElement('div');
-        dropdown.className = 'picker-dropdown';
-        renderConfigDropdown(dropdown, opt);
-        wrap.appendChild(dropdown);
-
-        configOptionsContainer.appendChild(wrap);
-      }
-    }
-
-    function renderConfigDropdown(dropdown, opt) {
-      dropdown.innerHTML = '';
-      if (isGroupedOptions(opt)) {
-        for (const group of opt.options) {
-          if (!group || !Array.isArray(group.options)) continue;
-          const header = document.createElement('div');
-          header.className = 'picker-dropdown-group-header';
-          header.textContent = group.name || group.group || '';
-          dropdown.appendChild(header);
-          for (const v of group.options) {
-            dropdown.appendChild(buildConfigItem(opt, v));
-          }
-        }
-      } else {
-        for (const v of opt.options) {
-          dropdown.appendChild(buildConfigItem(opt, v));
-        }
-      }
-    }
-
-    function buildConfigItem(opt, v) {
-      const selected = v.value === opt.currentValue;
-      const item = document.createElement('div');
-      item.className = 'picker-dropdown-item' + (selected ? ' selected' : '');
-      item.dataset.value = v.value;
-      item.dataset.desc = v.description || '';
-      if (v.description) item.title = v.description;
-      item.innerHTML =
-        '<span class="check">' + (selected ? '✓' : '') + '</span>' +
-        '<span class="item-label"></span>';
-      item.querySelector('.item-label').textContent = v.name || v.value;
-      return item;
-    }
-
-    // Event delegation: handle clicks on dynamically-rendered config pickers
-    configOptionsContainer.addEventListener('click', (e) => {
-      const target = e.target;
-      if (!(target instanceof Element)) return;
-
-      const item = target.closest('.picker-dropdown-item');
-      if (item) {
-        e.stopPropagation();
-        const wrap = item.closest('.picker-wrap');
-        const dropdown = item.closest('.picker-dropdown');
-        if (!wrap || !dropdown) return;
-        const configId = wrap.dataset.configId;
-        const value = item.dataset.value;
-        if (!configId || value == null) return;
-
-        // Find option in current state
-        const opt = configOptions.find(o => o && o.id === configId);
-        if (!opt || value === opt.currentValue) {
-          dropdown.classList.remove('open');
-          return;
-        }
-
-        // Optimistic update — agent's response will replace with authoritative state
-        opt.currentValue = value;
-        const labelEl = wrap.querySelector('.picker-btn .picker-label');
-        const btn = wrap.querySelector('.picker-btn');
-        if (labelEl) labelEl.textContent = pickerLabelFor(opt);
-        if (btn) btn.title = pickerTooltipFor(opt);
-        renderConfigDropdown(dropdown, opt);
-
-        dropdown.classList.remove('open');
-        vscode.postMessage({ type: 'setConfigOption', configId, value });
-        return;
-      }
-
-      const btn = target.closest('.picker-btn');
-      if (btn) {
-        e.stopPropagation();
-        const wrap = btn.closest('.picker-wrap');
-        if (!wrap) return;
-        const dropdown = wrap.querySelector('.picker-dropdown');
-        if (!dropdown) return;
-        const wasOpen = dropdown.classList.contains('open');
-        closePickers();
-        if (!wasOpen) dropdown.classList.add('open');
-      }
-    });
-
-    function setConfigOptionsState(opts) {
-      configOptions = Array.isArray(opts) ? opts : [];
-      useConfigOptions = configOptions.length > 0;
-
-      if (useConfigOptions) {
-        // Hide legacy pickers — spec requires configOptions to be used exclusively
-        modePickerWrap.classList.add('hidden');
-        modelPickerWrap.classList.add('hidden');
-        renderConfigPickers(configOptions);
-      } else {
-        configOptionsContainer.innerHTML = '';
-      }
-    }
-
-    // Toggle picker dropdowns
-    modePickerBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const wasOpen = modeDropdown.classList.contains('open');
-      closePickers();
-      if (!wasOpen) modeDropdown.classList.add('open');
-    });
-
-    modelPickerBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const wasOpen = modelDropdown.classList.contains('open');
-      closePickers();
-      if (!wasOpen) modelDropdown.classList.add('open');
-    });
-
-    function closePickers() {
-      modeDropdown.classList.remove('open');
-      modelDropdown.classList.remove('open');
-      // Close any dynamic config-option dropdowns
-      const open = configOptionsContainer.querySelectorAll('.picker-dropdown.open');
-      open.forEach(el => el.classList.remove('open'));
-      hidePickerTooltip();
-    }
-
-    // --- Picker hover tooltip (shared by all picker dropdowns) ---
-    const pickerTooltip = document.getElementById('pickerTooltip');
-
-    function hidePickerTooltip() {
-      if (pickerTooltip) pickerTooltip.classList.remove('visible');
-    }
-
-    function showPickerTooltip(itemEl) {
-      if (!pickerTooltip || !itemEl) return;
-      const desc = itemEl.dataset && itemEl.dataset.desc;
-      if (!desc) { hidePickerTooltip(); return; }
-
-      pickerTooltip.textContent = desc;
-      // Make it measurable while invisible to the user.
-      pickerTooltip.style.left = '-9999px';
-      pickerTooltip.style.top = '-9999px';
-      pickerTooltip.classList.add('visible');
-
-      const dropdown = itemEl.closest('.picker-dropdown');
-      if (!dropdown) { hidePickerTooltip(); return; }
-      const dropRect = dropdown.getBoundingClientRect();
-      const itemRect = itemEl.getBoundingClientRect();
-      const tipRect = pickerTooltip.getBoundingClientRect();
-      const gap = 6;
-
-      // Prefer left side; flip to right if not enough room.
-      let left = dropRect.left - tipRect.width - gap;
-      if (left < 4) left = dropRect.right + gap;
-      // Clamp horizontally inside the viewport.
-      const maxLeft = window.innerWidth - tipRect.width - 4;
-      if (left > maxLeft) left = Math.max(4, maxLeft);
-
-      // Vertically align with the hovered item, clamped inside the viewport.
-      let top = itemRect.top;
-      const maxTop = window.innerHeight - tipRect.height - 4;
-      if (top > maxTop) top = Math.max(4, maxTop);
-
-      pickerTooltip.style.left = left + 'px';
-      pickerTooltip.style.top = top + 'px';
-    }
-
-    // Delegated hover handling — one listener handles every picker dropdown.
-    document.addEventListener('mouseover', (e) => {
-      const target = e.target;
-      if (!(target instanceof Element)) return;
-      const item = target.closest('.picker-dropdown-item');
-      if (!item) return;
-      // Only consider items inside an open dropdown.
-      const dropdown = item.closest('.picker-dropdown');
-      if (!dropdown || !dropdown.classList.contains('open')) return;
-      showPickerTooltip(item);
-    });
-
-    document.addEventListener('mouseout', (e) => {
-      const target = e.target;
-      const related = e.relatedTarget;
-      if (!(target instanceof Element)) return;
-      const item = target.closest('.picker-dropdown-item');
-      if (!item) return;
-      // Stay visible if the mouse moved to another item inside the same dropdown.
-      if (related instanceof Element) {
-        const nextItem = related.closest('.picker-dropdown-item');
-        if (nextItem && nextItem !== item) return;
-      }
-      hidePickerTooltip();
-    });
-
-    // Hide the tooltip when the user scrolls a dropdown so it doesn't drift.
-    function attachScrollHide(dropdownEl) {
-      if (!dropdownEl || dropdownEl._tooltipScrollAttached) return;
-      dropdownEl._tooltipScrollAttached = true;
-      dropdownEl.addEventListener('scroll', hidePickerTooltip);
-    }
-    attachScrollHide(modeDropdown);
-    attachScrollHide(modelDropdown);
-    // Dynamic configOption dropdowns: rely on the same handler via event-delegation
-    // (they exist inside #configOptionsContainer); attach once per dropdown when created.
-    if (configOptionsContainer) {
-      const mo = new MutationObserver(() => {
-        configOptionsContainer.querySelectorAll('.picker-dropdown').forEach(attachScrollHide);
-      });
-      mo.observe(configOptionsContainer, { childList: true, subtree: true });
-    }
-
-    // Close pickers when clicking outside
-    document.addEventListener('click', () => closePickers());
-
-    // --- Messages ---
-    function addMessage(role, text) {
-      chatHistory.push({ kind: 'message', role, text });
-      saveState();
-      return addMessageDOM(role, text);
-    }
-
-    function addMessageDOM(role, text) {
-      hideEmpty();
-      const el = document.createElement('div');
-      el.className = 'message ' + role;
-      el.textContent = text;
-      messagesEl.appendChild(el);
-      scrollToBottom();
-      return el;
-    }
-
-    function hideEmpty() {
-      if (emptyState) emptyState.style.display = 'none';
-    }
-
-    function scrollToBottom() {
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-    }
-
-    function getStatusIcon(status) {
-      switch (status) {
-        case 'running': return '⟳';
-        case 'completed': return '✓';
-        case 'failed': return '✗';
-        default: return '…';
-      }
-    }
-
-    // Ensure the current turn has a tools container
-    function ensureTurnTools() {
-      if (!currentTurnEl) {
-        // Create turn container if none (e.g., tool call before first text)
-        currentTurnEl = document.createElement('div');
-        currentTurnEl.className = 'turn';
-        messagesEl.appendChild(currentTurnEl);
-      }
-      if (!currentToolsListEl) {
-        const toolsWrap = document.createElement('div');
-        toolsWrap.className = 'turn-tools';
-
-        currentToolCount = 0;
-        const summary = document.createElement('div');
-        summary.className = 'turn-tools-summary';
-        summary.textContent = '▸ Tool calls';
-        currentToolsCountEl = summary;
-        summary.addEventListener('click', () => {
-          const list = summary.nextElementSibling;
-          if (list) {
-            const count = parseInt(summary.dataset.count || '0', 10);
-            const collapsed = list.classList.toggle('collapsed');
-            summary.textContent = (collapsed ? '▸ ' : '▾ ') + count + ' tool call' + (count !== 1 ? 's' : '');
-          }
-        });
-        toolsWrap.appendChild(summary);
-
-        const list = document.createElement('div');
-        list.className = 'turn-tools-list';
-        toolsWrap.appendChild(list);
-        currentToolsListEl = list;
-
-        currentTurnEl.appendChild(toolsWrap);
-      }
-    }
-
-    function addToolCall(toolCallId, title, status) {
-      chatHistory.push({ kind: 'toolCall', toolCallId, title, status });
-      saveState();
-      addToolCallInline(toolCallId, title, status);
-    }
-
-    function addToolCallInline(toolCallId, title, status) {
-      hideEmpty();
-      ensureTurnTools();
-      currentToolCount++;
-      if (currentToolsCountEl) {
-        currentToolsCountEl.dataset.count = String(currentToolCount);
-        currentToolsCountEl.textContent = '▾ ' + currentToolCount + ' tool call' + (currentToolCount !== 1 ? 's' : '');
-      }
-
-      const el = document.createElement('div');
-      el.className = 'tool-call-inline';
-      el.id = 'tc-' + toolCallId;
-      el.innerHTML =
-        '<span class="tc-icon ' + status + '">' + getStatusIcon(status) + '</span>' +
-        '<span class="tc-title">' + escapeHtml(title || 'Tool Call') + '</span>';
-      currentToolsListEl.appendChild(el);
-      toolCalls[toolCallId] = el;
-      scrollToBottom();
-    }
-
-    // Fallback DOM builder for history restore (standalone card)
-    function addToolCallDOM(toolCallId, title, status) {
-      hideEmpty();
-      const el = document.createElement('div');
-      el.className = 'tool-call';
-      el.id = 'tc-' + toolCallId;
-      el.innerHTML = '<span class="title">' + escapeHtml(title || 'Tool Call') + '</span>'
-        + '<span class="status-badge ' + status + '">' + status + '</span>';
-      messagesEl.appendChild(el);
-      toolCalls[toolCallId] = el;
-      scrollToBottom();
-    }
-
-    function updateToolCall(toolCallId, status, title) {
-      for (let i = chatHistory.length - 1; i >= 0; i--) {
-        if (chatHistory[i].kind === 'toolCall' && chatHistory[i].toolCallId === toolCallId) {
-          chatHistory[i].status = status;
-          if (title) chatHistory[i].title = title;
-          break;
-        }
-      }
-      saveState();
-
-      const el = toolCalls[toolCallId] || document.getElementById('tc-' + toolCallId);
-      if (!el) return;
-
-      // Inline style (turn-based)
-      const iconEl = el.querySelector('.tc-icon');
-      if (iconEl) {
-        iconEl.className = 'tc-icon ' + status;
-        iconEl.textContent = getStatusIcon(status);
-        if (title) {
-          const titleEl = el.querySelector('.tc-title');
-          if (titleEl) titleEl.textContent = title;
-        }
-        return;
-      }
-      // Legacy card style fallback
-      const badge = el.querySelector('.status-badge');
-      if (badge) {
-        badge.className = 'status-badge ' + status;
-        badge.textContent = status;
-      }
-      if (title) {
-        const titleEl = el.querySelector('.title');
-        if (titleEl) titleEl.textContent = title;
-      }
-    }
-
-    function addPlan(plan) {
-      chatHistory.push({ kind: 'plan', plan: plan });
-      saveState();
-      addPlanDOM(plan);
-    }
-
-    function addPlanDOM(plan) {
-      hideEmpty();
-      const el = document.createElement('div');
-      el.className = 'plan';
-      let html = '<div class="plan-title">Plan</div>';
-      if (plan.entries) {
-        for (const entry of plan.entries) {
-          const icon = entry.status === 'completed' ? '✅'
-            : entry.status === 'in_progress' ? '🔄' : '⬜';
-          const cls = entry.status === 'completed' ? ' completed' : '';
-          html += '<div class="plan-entry' + cls + '">'
-            + icon + ' ' + escapeHtml(entry.title || entry.description || entry.content || '')
-            + '</div>';
-        }
-      }
-      el.innerHTML = html;
-      messagesEl.appendChild(el);
-      scrollToBottom();
-    }
-
-    function escapeHtml(text) {
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
-    }
-
-    function finalizeThought() {
-      if (!currentThoughtEl) return;
-      if (thoughtEndTime) return; // already finalized
-      thoughtEndTime = Date.now();
-      currentThoughtEl.classList.remove('streaming');
-      const elapsed = thoughtStartTime ? Math.round((thoughtEndTime - thoughtStartTime) / 1000) : 0;
-      const summary = currentThoughtEl.querySelector('summary');
-      if (summary) {
-        summary.innerHTML = elapsed > 0
-          ? 'Thought for ' + elapsed + 's'
-          : 'Thought';
-      }
-    }
-
-    /**
-     * Commit the in-progress assistant turn to chatHistory (without firing
-     * the live promptEnd markdown-render request — replay does that
-     * batched at loadSessionEnd). Resets all per-turn DOM/state pointers so
-     * the next turn starts fresh.
-     */
-    function finalizeCurrentAssistantTurn() {
-      if (currentThoughtText) {
-        finalizeThought();
-        const tEnd = thoughtEndTime || Date.now();
-        chatHistory.push({
-          kind: 'thought',
-          text: currentThoughtText,
-          durationSec: thoughtStartTime ? Math.round((tEnd - thoughtStartTime) / 1000) : 0,
-        });
-      }
-      if (currentAssistantText) {
-        chatHistory.push({ kind: 'message', role: 'assistant', text: currentAssistantText });
-        saveState();
-      }
-      currentAssistantEl = null;
-      currentAssistantText = '';
-      currentTurnEl = null;
-      currentToolsListEl = null;
-      currentToolsCountEl = null;
-      currentToolCount = 0;
-      currentThoughtEl = null;
-      currentThoughtTextEl = null;
-      currentThoughtText = '';
-      thoughtStartTime = null;
-      thoughtEndTime = null;
-    }
-
-    function addThoughtDOM(text, durationSec) {
-      hideEmpty();
-      const el = document.createElement('details');
-      el.className = 'thought-block';
-      el.innerHTML =
-        '<summary>' + (durationSec > 0 ? 'Thought for ' + durationSec + 's' : 'Thought') + '</summary>' +
-        '<div class="thought-content">' + escapeHtml(text) + '</div>';
-      messagesEl.appendChild(el);
-      scrollToBottom();
-    }
-
-    function showSessionConnected(session) {
-      hasActiveSession = true;
-      sessionState = {
-        agentName: session.agentName,
-        cwd: session.cwd,
-        title: session.title || undefined,
-      };
-      saveState();
-      showSessionConnectedFromState(sessionState);
-
-      // Prefer ACP "Session Config Options" when provided. Spec: clients
-      // that support configOptions MUST use them exclusively and ignore
-      // the legacy modes field.
-      const cfg = session.configOptions;
-      if (Array.isArray(cfg) && cfg.length > 0) {
-        setConfigOptionsState(cfg);
-      } else {
-        setConfigOptionsState([]);
-        if (session.modes) updateModePicker(session.modes);
-        if (session.models) updateModelPicker(session.models);
-      }
-      // Restore available commands
-      if (session.availableCommands) {
-        availableCommands = session.availableCommands;
-      }
-      updatePlaceholder();
-    }
-
-    function showSessionConnectedFromState(ss) {
-      hasActiveSession = true;
-      hideEmpty();
-      if (bannerAgent) bannerAgent.textContent = ss.title || ss.agentName || 'Agent';
-      if (bannerCwd) bannerCwd.textContent = ss.cwd || '';
-      if (sessionBanner) sessionBanner.classList.add('visible');
-      if (inputArea) inputArea.classList.remove('disabled');
-      promptInput.disabled = false;
-    }
-
-    function showNoSession() {
-      hasActiveSession = false;
-      sessionState = null;
-      saveState();
-      if (sessionBanner) sessionBanner.classList.remove('visible');
-      if (emptyState) emptyState.style.display = '';
-      if (inputArea) inputArea.classList.add('disabled');
-      // Hide pickers when disconnected
-      modePickerWrap.classList.add('hidden');
-      modelPickerWrap.classList.add('hidden');
-      setConfigOptionsState([]);
-    }
-
-    // Handle messages from the extension
-    window.addEventListener('message', (event) => {
-      const msg = event.data;
-      switch (msg.type) {
-        case 'state':
-          if (msg.session) {
-            showSessionConnected(msg.session);
-          } else {
-            showNoSession();
-          }
-          break;
-
-        case 'promptStart':
-          setProcessing(true);
-          currentAssistantEl = null;
-          currentAssistantText = '';
-          currentTurnEl = null;
-          currentToolsListEl = null;
-          currentToolsCountEl = null;
-          currentToolCount = 0;
-          currentThoughtEl = null;
-          currentThoughtTextEl = null;
-          currentThoughtText = '';
-          thoughtStartTime = null;
-          thoughtEndTime = null;
-          break;
-
-        case 'promptEnd':
-          // Finalize thought block if present
-          if (currentThoughtText) {
-            finalizeThought();
-            const tEnd = thoughtEndTime || Date.now();
-            chatHistory.push({
-              kind: 'thought',
-              text: currentThoughtText,
-              durationSec: thoughtStartTime ? Math.round((tEnd - thoughtStartTime) / 1000) : 0,
-            });
-          }
-          if (currentAssistantText) {
-            chatHistory.push({ kind: 'message', role: 'assistant', text: currentAssistantText });
-            saveState();
-            // Request markdown rendering from extension host
-            if (currentAssistantEl) {
-              vscode.postMessage({
-                type: 'renderMarkdown',
-                items: [{ index: chatHistory.length - 1, text: currentAssistantText }]
-              });
-            }
-          }
-          setProcessing(false);
-          currentAssistantEl = null;
-          currentAssistantText = '';
-          // Auto-collapse tool calls in completed turns
-          if (currentToolsListEl && currentToolCount > 3) {
-            currentToolsListEl.classList.add('collapsed');
-            if (currentToolsCountEl) {
-              currentToolsCountEl.dataset.count = String(currentToolCount);
-              currentToolsCountEl.textContent = '▸ ' + currentToolCount + ' tool calls';
-            }
-          }
-          currentTurnEl = null;
-          currentToolsListEl = null;
-          currentToolsCountEl = null;
-          currentToolCount = 0;
-          currentThoughtEl = null;
-          currentThoughtTextEl = null;
-          currentThoughtText = '';
-          thoughtStartTime = null;
-          thoughtEndTime = null;
-          break;
-
-        case 'clearChat':
-          chatHistory = [];
-          sessionState = null;
-          saveState();
-          currentAssistantEl = null;
-          currentAssistantText = '';
-          toolCalls = {};
-          currentTurnEl = null;
-          currentToolsListEl = null;
-          currentToolsCountEl = null;
-          currentToolCount = 0;
-          currentThoughtEl = null;
-          currentThoughtTextEl = null;
-          currentThoughtText = '';
-          thoughtStartTime = null;
-          thoughtEndTime = null;
-          availableCommands = [];
-          slashPopup.classList.remove('open');
-          messagesEl.innerHTML = '';
-          messagesEl.appendChild(emptyState);
-          if (emptyState) emptyState.style.display = '';
-          if (sessionBanner) sessionBanner.classList.remove('visible');
-          if (inputArea) inputArea.classList.add('disabled');
-          modePickerWrap.classList.add('hidden');
-          modelPickerWrap.classList.add('hidden');
-          setConfigOptionsState([]);
-          setProcessing(false);
-          break;
-
-        case 'error':
-          addMessage('error', msg.message || 'An error occurred');
-          break;
-
-        case 'sessionUpdate':
-          handleUpdate(msg.update);
-          break;
-
-        case 'modesUpdate':
-          updateModePicker(msg.modes);
-          break;
-
-        case 'modelsUpdate':
-          updateModelPicker(msg.models);
-          break;
-
-        case 'configOptionsUpdate':
-          setConfigOptionsState(msg.configOptions || []);
-          break;
-
-        case 'loadSessionStart':
-          handleLoadSessionStart();
-          break;
-
-        case 'loadSessionEnd':
-          handleLoadSessionEnd(!!msg.ok);
-          break;
-
-        case 'sessionInfoUpdate':
-          handleSessionInfoUpdate(msg.title);
-          break;
-
-        case 'markdownRendered': {
-          // Extension sent back rendered HTML for messages
-          const rendered = msg.items || [];
-          for (const item of rendered) {
-            // Find the DOM element for this history item
-            // For the just-completed streaming message, update the last assistant el
-            const historyItem = chatHistory[item.index];
-            if (!historyItem || historyItem.role !== 'assistant') continue;
-
-            // Find the element — walk all .message.assistant elements
-            const allAssistant = messagesEl.querySelectorAll('.message.assistant');
-            // The item.index tracks position in chatHistory; count only assistant messages up to this index
-            let assistantIdx = 0;
-            for (let i = 0; i < chatHistory.length; i++) {
-              if (i === item.index) break;
-              if (chatHistory[i].kind === 'message' && chatHistory[i].role === 'assistant') assistantIdx++;
-            }
-            const el = allAssistant[assistantIdx];
-            if (el) {
-              el.classList.add('md-rendered');
-              el.innerHTML = item.html;
-            }
-          }
-          scrollToBottom();
-          break;
-        }
-      }
-    });
-
-    function handleUpdate(update) {
-      if (!update) return;
-      const type = update.sessionUpdate;
-
-      switch (type) {
-        case 'agent_message_chunk': {
-          const content = update.content;
-          if (content && content.type === 'text' && content.text) {
-            currentAssistantText += content.text;
-            // Don't create visible element until there's non-whitespace content
-            if (!currentAssistantEl && !currentAssistantText.trim()) {
-              break;
-            }
-            // Auto-collapse thought when assistant text starts
-            if (currentThoughtEl && currentThoughtEl.open) {
-              finalizeThought();
-              currentThoughtEl.open = false;
-            }
-            if (!currentAssistantEl) {
-              // Create a turn container, assistant text goes inside it
-              if (!currentTurnEl) {
-                currentTurnEl = document.createElement('div');
-                currentTurnEl.className = 'turn';
-                messagesEl.appendChild(currentTurnEl);
-                hideEmpty();
-              }
-              currentAssistantEl = document.createElement('div');
-              currentAssistantEl.className = 'message assistant';
-              currentTurnEl.insertBefore(currentAssistantEl, currentTurnEl.querySelector('.turn-tools'));
-            }
-            currentAssistantEl.textContent = currentAssistantText;
-            scrollToBottom();
-          }
-          break;
-        }
-
-        case 'user_message_chunk': {
-          // Only the session/load replay path emits this; live prompts
-          // never echo the user's message. Use it to break apart historical
-          // turns: finalize any pending assistant turn first, then append
-          // the historical user message.
-          const content = update.content;
-          if (content && content.type === 'text' && typeof content.text === 'string') {
-            finalizeCurrentAssistantTurn();
-            // Coalesce consecutive user chunks into one message.
-            const last = chatHistory[chatHistory.length - 1];
-            if (last && last.kind === 'message' && last.role === 'user') {
-              last.text += content.text;
-              const allUser = messagesEl.querySelectorAll('.message.user');
-              const el = allUser[allUser.length - 1];
-              if (el) el.textContent = last.text;
-            } else {
-              addMessage('user', content.text);
-            }
-          }
-          break;
-        }
-
-        case 'agent_thought_chunk': {
-          const content = update.content;
-          if (content && content.type === 'text') {
-            if (!currentThoughtEl) {
-              // Create thought block inside turn
-              if (!currentTurnEl) {
-                currentTurnEl = document.createElement('div');
-                currentTurnEl.className = 'turn';
-                messagesEl.appendChild(currentTurnEl);
-                hideEmpty();
-              }
-              currentThoughtEl = document.createElement('details');
-              currentThoughtEl.className = 'thought-block streaming';
-              currentThoughtEl.open = true;
-              currentThoughtEl.innerHTML =
-                '<summary><span class="thought-indicator"></span> Thinking\u2026</summary>' +
-                '<div class="thought-content"></div>';
-              currentThoughtTextEl = currentThoughtEl.querySelector('.thought-content');
-              currentTurnEl.insertBefore(currentThoughtEl, currentTurnEl.firstChild);
-              thoughtStartTime = Date.now();
-              currentThoughtText = '';
-            }
-            currentThoughtText += content.text;
-            currentThoughtTextEl.textContent = currentThoughtText;
-            scrollToBottom();
-          }
-          break;
-        }
-
-        case 'tool_call': {
-          const tc = update;
-          addToolCall(
-            tc.toolCallId || 'unknown',
-            tc.title || 'Tool Call',
-            tc.status || 'pending',
-          );
-          break;
-        }
-
-        case 'tool_call_update': {
-          updateToolCall(
-            update.toolCallId || 'unknown',
-            update.status || 'completed',
-            update.title,
-          );
-          break;
-        }
-
-        case 'plan': {
-          addPlan(update);
-          break;
-        }
-
-        case 'current_mode_update': {
-          // Server pushed a mode change
-          currentModeId = update.currentModeId || update.modeId || null;
-          const current = availableModes.find(m => m.id === currentModeId);
-          if (current) {
-            modePickerLabel.textContent = current.name;
-            renderModeDropdown();
-          }
-          break;
-        }
-
-        case 'config_option_update': {
-          // Server pushed a full configOptions replacement
-          setConfigOptionsState(update.configOptions || []);
-          break;
-        }
-
-        case 'available_commands_update':
-          availableCommands = update.availableCommands || [];
-          updatePlaceholder();
-          break;
-      }
-    }
-
-    // Restore previous state before telling extension we're ready
-    restoreState();
-
-    // Tell extension we're ready
-    vscode.postMessage({ type: 'ready' });
-  </script>
+  <script src="${scriptUri}"></script>
 </body>
 </html>`;
   }
 
   /**
-   * Attach a file URI — notify the webview to include it in the next prompt.
+   * Attach a file URI - notify the webview to include it in the next prompt.
    */
   attachFile(uri: vscode.Uri): void {
     if (this.view) {
@@ -2546,14 +2631,11 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
 
   dispose(): void {
     this.sessionUpdateHandler.removeListener(this.updateListener);
+    this.webviewMessageDisposable?.dispose();
+    this.diffBaseContentProviderDisposable.dispose();
+    if (this.changedFilesRefreshTimer) {
+      clearTimeout(this.changedFilesRefreshTimer);
+    }
   }
 }
 
-function getNonce(): string {
-  let text = '';
-  const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  for (let i = 0; i < 32; i++) {
-    text += possible.charAt(Math.floor(Math.random() * possible.length));
-  }
-  return text;
-}

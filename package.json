@@ -1,9 +1,9 @@
 {
-  "name": "acp-client",
-  "displayName": "ACP Client",
-  "description": "Agent Client Protocol client for VS Code — connect to GitHub Copilot, Claude Code, Gemini CLI, Qwen Code, Codex CLI, OpenCode, OpenClaw, Kiro CLI, Hermes Agent, and any ACP-compatible AI coding agent",
+  "name": "auggie-workbench",
+  "displayName": "Auggie Workbench",
+  "description": "Auggie-powered VS Code sidebar over Agent Client Protocol, with a focused coding-agent workflow.",
   "version": "0.2.0",
-  "publisher": "formulahendry",
+  "publisher": "local",
   "license": "MIT",
   "icon": "resources/icon.png",
   "bugs": {
@@ -36,7 +36,7 @@
       "activitybar": [
         {
           "id": "acp-client",
-          "title": "ACP Client",
+          "title": "Auggie",
           "icon": "resources/icon.svg"
         }
       ]
@@ -45,12 +45,12 @@
       "acp-client": [
         {
           "id": "acp-sessions",
-          "name": "Agents",
+          "name": "Threads",
           "type": "tree"
         },
         {
           "id": "acp-chat",
-          "name": "Chat",
+          "name": "Auggie",
           "type": "webview"
         }
       ]
@@ -58,74 +58,78 @@
     "viewsWelcome": [
       {
         "view": "acp-sessions",
-        "contents": "No agents configured.\n[Add Agent](command:acp.addAgent)\nConfigure agents in settings or browse the [Agent Registry](command:acp.browseRegistry)."
+        "contents": "No Auggie threads yet.\n[New Thread](command:acp.newConversation)"
       },
       {
         "view": "acp-chat",
-        "contents": "Start chatting with an AI coding agent.\n[Connect to Agent](command:acp.connectAgent)\nSelect an agent from the list above to begin."
+        "contents": "Open Auggie and start working in this workspace.\n[Start Auggie](command:acp.connectAuggie)"
       }
     ],
     "commands": [
       {
+        "command": "acp.connectAuggie",
+        "title": "Auggie: Start"
+      },
+      {
         "command": "acp.connectAgent",
-        "title": "ACP: Connect to Agent",
+        "title": "Auggie: Connect",
         "icon": "$(plug)"
       },
       {
         "command": "acp.newConversation",
-        "title": "ACP: New Conversation",
+        "title": "Auggie: New Thread",
         "icon": "$(add)"
       },
       {
         "command": "acp.sendPrompt",
-        "title": "ACP: Send Prompt"
+        "title": "Auggie: Focus Prompt"
       },
       {
         "command": "acp.cancelTurn",
-        "title": "ACP: Cancel Current Turn",
+        "title": "Auggie: Stop",
         "icon": "$(debug-stop)"
       },
       {
         "command": "acp.disconnectAgent",
-        "title": "ACP: Disconnect Agent",
+        "title": "Auggie: Disconnect",
         "icon": "$(debug-disconnect)"
       },
       {
         "command": "acp.openChat",
-        "title": "ACP: Open Chat Panel"
+        "title": "Auggie: Open Chat"
       },
       {
         "command": "acp.addAgent",
-        "title": "ACP: Add Agent Configuration",
+        "title": "Auggie: Configure Launch Command",
         "icon": "$(add)"
       },
       {
         "command": "acp.removeAgent",
-        "title": "ACP: Remove Agent"
+        "title": "Auggie: Remove Launch Command"
       },
       {
         "command": "acp.showLog",
-        "title": "ACP: Show Log"
+        "title": "Auggie: Show Log"
       },
       {
         "command": "acp.showTraffic",
-        "title": "ACP: Show Protocol Traffic"
+        "title": "Auggie: Show Protocol Traffic"
       },
       {
         "command": "acp.browseRegistry",
-        "title": "ACP: Browse Agent Registry"
+        "title": "Auggie: Browse ACP Registry"
       },
       {
         "command": "acp.setMode",
-        "title": "ACP: Set Agent Mode"
+        "title": "Auggie: Set Mode"
       },
       {
         "command": "acp.setModel",
-        "title": "ACP: Set Agent Model"
+        "title": "Auggie: Set Model"
       },
       {
         "command": "acp.attachFile",
-        "title": "ACP: Attach File to Prompt",
+        "title": "Auggie: Attach File",
         "icon": "$(attach)"
       },
       {
@@ -135,15 +139,15 @@
       },
       {
         "command": "acp.refreshSessions",
-        "title": "ACP: Refresh Sessions"
+        "title": "Auggie: Refresh Threads"
       },
       {
         "command": "acp.openSession",
-        "title": "ACP: Open Session"
+        "title": "Auggie: Open Thread"
       },
       {
         "command": "acp.loadMoreSessions",
-        "title": "ACP: Load More Sessions"
+        "title": "Auggie: Load More Threads"
       },
       {
         "command": "acp.copySessionId",
@@ -155,7 +159,7 @@
       },
       {
         "command": "acp.restartAgent",
-        "title": "ACP: Restart Agent",
+        "title": "Auggie: Restart",
         "icon": "$(debug-restart)"
       }
     ],
@@ -181,17 +185,17 @@
       "view/title": [
         {
           "command": "acp.addAgent",
-          "when": "view == acp-sessions",
+          "when": "false",
           "group": "navigation@1"
         },
         {
           "command": "acp.refreshAgents",
           "when": "view == acp-sessions",
-          "group": "navigation@2"
+          "group": "navigation@3"
         },
         {
           "command": "acp.browseRegistry",
-          "when": "view == acp-sessions"
+          "when": "false"
         },
         {
           "command": "acp.newConversation",
@@ -239,7 +243,7 @@
         },
         {
           "command": "acp.removeAgent",
-          "when": "view == acp-sessions && viewItem =~ /^agent/"
+          "when": "false"
         },
         {
           "command": "acp.restartAgent",
@@ -275,44 +279,12 @@
       }
     ],
     "configuration": {
-      "title": "ACP Client",
+      "title": "Auggie Workbench",
       "properties": {
         "acp.agents": {
           "type": "object",
-          "description": "Agent configurations. Each key is the agent name, value has command, args, and env.",
+          "description": "Auggie ACP launch configuration.",
           "default": {
-            "GitHub Copilot": {
-              "command": "npx",
-              "args": [
-                "@github/copilot-language-server@latest",
-                "--acp"
-              ],
-              "env": {}
-            },
-            "Claude Code": {
-              "command": "npx",
-              "args": [
-                "@agentclientprotocol/claude-agent-acp@latest"
-              ],
-              "env": {}
-            },
-            "Gemini CLI": {
-              "command": "npx",
-              "args": [
-                "@google/gemini-cli@latest",
-                "--experimental-acp"
-              ],
-              "env": {}
-            },
-            "Qwen Code": {
-              "command": "npx",
-              "args": [
-                "@qwen-code/qwen-code@latest",
-                "--acp",
-                "--experimental-skills"
-              ],
-              "env": {}
-            },
             "Auggie CLI": {
               "command": "npx",
               "args": [
@@ -322,53 +294,20 @@
               "env": {
                 "AUGMENT_DISABLE_AUTO_UPDATE": "1"
               }
-            },
-            "Qoder CLI": {
-              "command": "npx",
-              "args": [
-                "@qoder-ai/qodercli@latest",
-                "--acp"
-              ],
-              "env": {}
-            },
-            "Codex CLI": {
-              "command": "npx",
-              "args": [
-                "@zed-industries/codex-acp@latest"
-              ],
-              "env": {}
-            },
-            "OpenCode": {
-              "command": "npx",
-              "args": [
-                "opencode-ai@latest",
-                "acp"
-              ],
-              "env": {}
-            },
-            "OpenClaw": {
-              "command": "npx",
-              "args": [
-                "openclaw",
-                "acp"
-              ],
-              "env": {}
-            },
-            "Kiro CLI": {
-              "command": "kiro-cli",
-              "args": [
-                "acp"
-              ],
-              "env": {}
-            },
-            "Hermes Agent": {
-              "command": "hermes",
-              "args": [
-                "acp"
-              ],
-              "env": {}
             }
           }
+        },
+        "acp.mcpServers": {
+          "description": "MCP servers to attach to every ACP session. Accepts either an ACP-style array or Auggie's documented object keyed by server name.",
+          "default": {},
+          "oneOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "array"
+            }
+          ]
         },
         "acp.autoApprovePermissions": {
           "type": "string",
@@ -388,6 +327,11 @@
           "type": "boolean",
           "default": true,
           "description": "Log all ACP protocol traffic to the output channel."
+        },
+        "acp.autoConnectAuggie": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically connect to Auggie when the sidebar activates."
         }
       }
     }

@@ -5,14 +5,14 @@ let _trafficChannel: vscode.OutputChannel | undefined;
 
 export function getOutputChannel(): vscode.OutputChannel {
   if (!_outputChannel) {
-    _outputChannel = vscode.window.createOutputChannel('ACP Client');
+    _outputChannel = vscode.window.createOutputChannel('Auggie Workbench');
   }
   return _outputChannel;
 }
 
 export function getTrafficChannel(): vscode.OutputChannel {
   if (!_trafficChannel) {
-    _trafficChannel = vscode.window.createOutputChannel('ACP Traffic');
+    _trafficChannel = vscode.window.createOutputChannel('Auggie Protocol');
   }
   return _trafficChannel;
 }

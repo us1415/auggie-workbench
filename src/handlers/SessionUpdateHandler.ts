@@ -21,7 +21,7 @@ export class SessionUpdateHandler {
 
   handleUpdate(update: SessionNotification): void {
     const updateType = (update.update as any)?.sessionUpdate || 'unknown';
-    log(`sessionUpdate: type=${updateType}, sessionId=${update.sessionId}`);
+    log(`sessionUpdate: type=${updateType}, sessionId=${update.sessionId}${this.describeToolUpdate(update.update)}`);
 
     for (const listener of this.listeners) {
       try {
@@ -34,5 +34,27 @@ export class SessionUpdateHandler {
 
   dispose(): void {
     this.listeners.clear();
+  }
+
+  private describeToolUpdate(update: unknown): string {
+    const data = update as any;
+    if (!data || (data.sessionUpdate !== 'tool_call' && data.sessionUpdate !== 'tool_call_update')) {
+      return '';
+    }
+
+    const fields = Object.keys(data).filter(key => key !== 'sessionUpdate');
+    const summary: string[] = [];
+    if (data.toolCallId) { summary.push(`id=${data.toolCallId}`); }
+    if (data.title) { summary.push(`title=${JSON.stringify(data.title)}`); }
+    if (data.status) { summary.push(`status=${data.status}`); }
+    if (data.kind) { summary.push(`kind=${data.kind}`); }
+    if (data.name) { summary.push(`name=${data.name}`); }
+    if (data.command) { summary.push(`command=${JSON.stringify(data.command)}`); }
+    if (Array.isArray(data.args)) { summary.push(`args=${JSON.stringify(data.args)}`); }
+    if (data.content?.type) { summary.push(`contentType=${data.content.type}`); }
+    if (data.location?.path) { summary.push(`path=${data.location.path}`); }
+    if (data.path) { summary.push(`path=${data.path}`); }
+
+    return ` (${summary.join(', ') || `fields=${fields.join(',')}`})`;
   }
 }

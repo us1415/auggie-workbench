@@ -12,7 +12,7 @@ export class StatusBarManager {
       vscode.StatusBarAlignment.Left,
       100,
     );
-    this.statusBarItem.command = 'acp.connectAgent';
+    this.statusBarItem.command = 'acp.connectAuggie';
     this.updateStatus();
 
     // Update on agent changes
@@ -28,13 +28,13 @@ export class StatusBarManager {
     const connectedAgents = this.sessionManager.getConnectedAgentNames();
 
     if (connectedAgents.length === 0) {
-      this.statusBarItem.text = '$(hubot) ACP: Disconnected';
-      this.statusBarItem.tooltip = 'Click to connect to an agent';
+      this.statusBarItem.text = '$(sparkle) Auggie';
+      this.statusBarItem.tooltip = 'Start Auggie in this workspace';
       this.statusBarItem.backgroundColor = undefined;
     } else {
       const agentName = activeSession?.agentDisplayName || connectedAgents[0];
-      this.statusBarItem.text = `$(hubot) ACP: ${agentName}`;
-      this.statusBarItem.tooltip = `Connected to ${agentName}\n${connectedAgents.length} agent(s) connected`;
+      this.statusBarItem.text = `$(sparkle) Auggie`;
+      this.statusBarItem.tooltip = `Connected to ${agentName}`;
       this.statusBarItem.backgroundColor = undefined;
     }
 
@@ -42,7 +42,7 @@ export class StatusBarManager {
   }
 
   private showError(): void {
-    this.statusBarItem.text = '$(error) ACP: Error';
+    this.statusBarItem.text = '$(error) Auggie';
     this.statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
   }
 
