@@ -407,6 +407,14 @@ Terminal card detail side-channel fix on 2026-07-05:
   - `cmd /c npm run compile` passed.
   - `cmd /c npm run lint` passed.
 - Needs dev-host retest: run `Run node --version in the VS Code terminal.`, expand the tool card, and confirm command/output/exit details appear instead of only `Tool: other`.
+- Follow-up polish from user screenshot: terminal card output previews include PowerShell/VS Code shell-control noise such as OSC/ANSI escape sequences. Add a later cleanup task to strip ANSI/OSC/control sequences from card previews while leaving captured raw output available internally.
+
+Read-card title fallback on 2026-07-05:
+
+- User smoke test showed a read card titled `Read 'RELEASE_NOTES_ELECTRON.md'` expanded to only `Tool: read`.
+- Root cause: Auggie exposed the file path in the card title, but not in the structured ACP payload fields parsed by the webview.
+- `media/chatWebview.js` now extracts quoted file paths from read/file-style tool titles and quoted search terms from search-style tool titles as a fallback.
+- Needs dev-host retest: repeat the file-read prompt and confirm the expanded card shows `File: RELEASE_NOTES_ELECTRON.md`.
 
 ## Known Issues / Watch Items
 

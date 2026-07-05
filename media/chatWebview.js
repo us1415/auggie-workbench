@@ -1848,6 +1848,30 @@
       return found ? found.length : undefined;
     }
 
+    function quotedTitleValue(title) {
+      const text = String(title || '');
+      const quoted = text.match(/['"`]([^'"`]+)['"`]/);
+      if (quoted) return quoted[1].trim();
+      return '';
+    }
+
+    function filePathFromTitle(title) {
+      const quoted = quotedTitleValue(title);
+      if (quoted) return quoted;
+      const text = String(title || '');
+      const match = text.match(/\b[\w./\\-]+\.[\w.-]+\b/);
+      return match ? match[0] : '';
+    }
+
+    function queryFromTitle(title) {
+      const quoted = quotedTitleValue(title);
+      if (quoted && /\b(search|grep|find|ripgrep|rg|query)\b/i.test(String(title || ''))) {
+        return quoted;
+      }
+      const match = String(title || '').match(/\b(?:search|grep|find|query)\s+(?:for\s+)?(.+)$/i);
+      return match ? match[1].trim().replace(/^['"`]+|['"`]+$/g, '') : '';
+    }
+
     function buildToolDetailModel(title, details) {
       const args = toolArguments(details);
       const contentText = textFromToolContent(details?.content) ||
@@ -1885,7 +1909,7 @@
         'details.location.path',
         'details.result.path',
         'details.result.file',
-      ]);
+      ]) || (isFileLike ? filePathFromTitle(title) : '');
       const query = firstUsefulValue({ details, args }, [
         'args.query',
         'args.pattern',
@@ -1897,7 +1921,7 @@
         'details.regex',
         'details.search',
         'details.result.query',
-      ]);
+      ]) || (isSearchLike ? queryFromTitle(title) : '');
       const url = firstUsefulValue({ details, args }, [
         'args.url',
         'args.uri',
