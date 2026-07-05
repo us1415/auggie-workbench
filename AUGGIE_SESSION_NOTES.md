@@ -482,6 +482,9 @@ Packaging smoke on 2026-07-05:
   - README now documents side-by-side VSIX install, first terminal smoke test, Auggie commands/settings, built-in terminal MCP aliases, development commands, and current limitations.
   - `package.json` repository, homepage, and bugs URLs now point to `https://github.com/us1415/vscode-acp`.
   - Rebuilt `auggie-workbench-0.2.0.vsix` so the package includes the updated README and metadata.
+- Changelog cleanup:
+  - Replaced the upstream ACP Client release-history changelog with an Auggie Workbench changelog.
+  - New changelog covers the 0.2.0 Auggie Workbench package path, terminal MCP bridge, review cards, Edits view, smoke-test results, packaging verification, and known limitations.
 
 ## Known Issues / Watch Items
 

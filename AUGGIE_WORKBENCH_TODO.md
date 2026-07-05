@@ -17,6 +17,7 @@ Public references:
 - [x] Confirm `media/chatWebview.js` is included when packaging the extension.
 - [x] Confirm `scripts/auggie-terminal-mcp.js` is included when packaging the extension.
 - [x] Replace upstream ACP Client README with Auggie Workbench install/smoke-test docs.
+- [x] Replace upstream ACP Client changelog with Auggie Workbench package/smoke-test changelog.
 
 ## 2. Main Shell Layout
 

@@ -1,92 +1,110 @@
-# Change Log
+# Changelog
 
-All notable changes to the "vscode-acp" extension will be documented in this file.
+All notable changes to Auggie Workbench are documented here.
 
-Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
+This project started from the open-source ACP Client for VS Code and is now being shaped into a focused Auggie CLI workbench. Older ACP Client release history is intentionally not repeated here because this branch is tracking the Auggie Workbench fork/package path.
 
-## [0.2.0] - 2026-05-16
+## [0.2.0] - 2026-07-05
 
 ### Added
-- **Session list in the Agents view**: each agent row is now expandable, revealing previous sessions for that agent. Clicking a session restores its history in the chat view.
-  - Uses `session/list` when the agent supports it (full source of truth, with cursor pagination).
-  - Falls back to a local, per-workspace session cache for agents that support `session/load` / `session/resume` but not `session/list` — captures `sessionId`, title (from `session_info_update`), first prompt, and timestamps.
-  - Opening a session uses `session/load` (replays history into the chat) when supported, otherwise `session/resume`.
-  - Right-click on a session: **Copy Session ID**. On a locally-cached session: **Forget Session**. On an agent: **Refresh Sessions**.
-  - Agents that advertise none of `list` / `load` / `resume` show as a non-expandable leaf, matching prior behavior.
-- **Session Config Options** (ACP): generic per-session selector(s) advertised by the agent (e.g. modes, models, thought levels). Pickers are rendered dynamically in the chat composer; the legacy Mode / Model pickers remain as a fallback for agents that haven't migrated yet.
-- New command `ACP: Refresh Sessions` (also available via right-click on an agent).
+
+- Auggie-focused extension identity:
+  - display name: `Auggie Workbench`
+  - extension id: `local.auggie-workbench`
+  - activity bar title: `Auggie`
+- Default Auggie launch configuration using `npx @augmentcode/auggie@latest --acp`.
+- Auggie workbench shell with Thread, Tasks, and Edits tabs.
+- Recent thread tree with active-thread marker, refresh support, open latest, and open older thread flow.
+- Composer context controls for files, folders, recently opened files, selected code, rules/context chips, and prompt controls.
+- Task view backed by ACP plan updates, persisted task snapshots, and fallback plan-like text recovery.
+- Reviewable action cards for tool activity with expandable details.
+- File/read/search/execute card fallbacks when Auggie exposes useful details only in card titles.
+- Git-backed Edits view with:
+  - tracked changed-file list
+  - added/removed line totals
+  - untracked-file detection
+  - binary-file labels
+  - expandable diff or added-line previews
+  - Open and Diff actions
+  - guarded row-level discard and Discard All controls
+  - live refresh on workspace file create, save, rename, and delete events
+- Visible terminal command path:
+  - VS Code shell-integration terminal backend
+  - fallback pseudoterminal backend
+  - extension-host localhost bridge
+  - built-in stdio MCP helper at `scripts/auggie-terminal-mcp.js`
+  - automatic MCP session attachment as `auggie-vscode-terminal`
+- Built-in terminal MCP aliases:
+  - `run_command_in_vscode_terminal`
+  - `run_terminal_command`
+  - `run_command`
+  - `run_in_vscode_terminal`
+- Terminal card side-channel so visible-terminal MCP runs can show command, terminal id, exit status, timeout/truncation flags, and output even when Auggie ACP payloads are sparse.
+- Packaging guardrails in `.vscodeignore` so the VSIX includes runtime assets and excludes repo/dev artifacts.
+- Local packaged artifact: `auggie-workbench-0.2.0.vsix`.
+- Auggie Workbench README with install, smoke-test, command, settings, terminal MCP, development, and limitation notes.
 
 ### Changed
-- Mode / Model picker dropdowns now show option descriptions in a floating hover tooltip on the side, instead of stacking them inline. Long names display in full, and the dropdown grows responsively with the panel width.
-- Bumped `@agentclientprotocol/sdk` from `^0.14.1` to `^0.21.1`. Migrated `unstable_listSessions` / `unstable_resumeSession` to their stable equivalents.
+
+- Reworked the original multi-agent ACP Client framing into an Auggie-first sidebar experience.
+- Updated package metadata links to `https://github.com/us1415/vscode-acp`.
+- Renamed user-facing commands and views from ACP Client language to Auggie language where practical.
+- Improved MCP server config handling:
+  - accepts ACP-style arrays and Auggie-style objects keyed by server name
+  - supports env object or `{ name, value }` array shapes
+  - expands `${workspaceFolder}` in command, args, and URL fields
+- Improved action-card parsing for command, args, cwd, file path, search query, URL, HTTP method, result count, summary/message, output, and preview content.
+- Replaced the upstream README in the packaged VSIX with Auggie Workbench documentation.
 
 ### Fixed
-- Agent / model picker labels no longer truncate at 140 px — names display fully and pickers wrap to a second row when the panel is narrow ([#36](https://github.com/formulahendry/vscode-acp/issues/36)).
-- Slash-command autocomplete now appears reliably when the agent advertises commands. Notifications like `available_commands_update` that arrive during session creation are persisted on the session even before `activeSessionId` is set.
-- Per-session state (config options, available commands, title) carries forward correctly when the active session is set after the notification arrives.
 
-## [0.1.7] - 2026-05-10
+- Fixed webview loading by externalizing the chat script to `media/chatWebview.js`.
+- Fixed startup restore flows to reduce duplicate open/restore behavior and old conversation flashes.
+- Fixed task persistence across dev-host reloads by persisting rendered task snapshots in extension workspace state.
+- Fixed task-title recovery for hyphenated titles.
+- Fixed MCP helper startup timeout by supporting Content-Length CRLF, Content-Length LF, and newline-delimited JSON framing.
+- Fixed visible-terminal card details when Auggie reports only generic `other` tool payloads.
+- Fixed read/search/execute action-card summaries when the useful file/query/command data appears only in the tool title.
+- Fixed Edits tab freshness for ordinary workspace file changes.
 
-### Changed
-- **Claude Code**: Updated default package from `@zed-industries/claude-code-acp` to `@agentclientprotocol/claude-agent-acp` (the package was renamed upstream).
+### Verified
 
-## [0.1.6] - 2026-04-20
+- User smoke-tested natural prompt terminal execution:
+  - `Run node --version in the VS Code terminal.`
+  - Auggie selected the visible-terminal MCP path.
+  - VS Code terminal ran the command and returned `v22.14.0`.
+- User smoke-tested expanded terminal card details.
+- User smoke-tested file read and command/search action-card summaries.
+- User smoke-tested Edits tab untracked-file display, untracked text preview, binary labels, and row-level discard on a disposable file.
+- User smoke-tested recent/open older thread behavior.
+- Packaging smoke verified the VSIX includes:
+  - `extension/dist/extension.js`
+  - `extension/media/chatWebview.js`
+  - `extension/scripts/auggie-terminal-mcp.js`
+  - package metadata, README, license, and resources
+- Packaging smoke verified the VSIX excludes:
+  - `.agents`
+  - `.github`
+  - `AUGGIE_*.md`
+  - `Photos-*.zip`
+  - generated `.vsix`
+  - source maps
+  - declaration files
+  - dist test output
+- Latest local checks passed:
+  - `cmd /c npm run compile`
+  - `cmd /c npm run lint`
+  - `cmd /c npx vsce package --out auggie-workbench-0.2.0.vsix`
 
-### Added
-- **Kiro CLI**: Added [Kiro CLI](https://kiro.dev/docs/cli/acp/) as a pre-configured agent (`kiro-cli acp`).
+### Known Limitations
 
-## [0.1.5] - 2026-04-19
+- Auggie chooses which tools to call; the visible-terminal MCP bridge makes terminal execution available but does not force every command through it.
+- Terminal card output previews still need ANSI/OSC/control-sequence cleanup.
+- External/web action-card summaries need a real Auggie web-style tool payload to validate.
+- `Discard All` has not been smoke-tested against only disposable changes.
+- Checkpoints are planned but not implemented.
+- Some reload/open-latest and loading-overlay polish remains on the TODO list.
 
-### Added
-- **Hermes Agent**: Added [Hermes Agent](https://hermes-agent.nousresearch.com/docs/user-guide/features/acp) from Nous Research as a pre-configured agent (`hermes acp`).
+## Attribution
 
-## [0.1.4] - 2026-04-18
-
-### Added
-- GitHub Actions workflow to publish the extension to both Visual Studio Marketplace and Open VSX Registry
-
-### Fixed
-- Pass workspace `cwd` when spawning agent processes, with a fallback to the process working directory
-
-## [0.1.3] - 2026-03-01
-
-### Added
-- **OpenClaw**: Added OpenClaw as a pre-configured agent (`npx openclaw acp`)
-
-## [0.1.2] - 2026-02-12
-
-### Added
-- **Thinking display**: Show agent thought chunks in a collapsible block with streaming animation and elapsed time
-- **Slash commands**: Autocomplete popup for agent-provided commands with keyboard navigation (Arrow/Tab/Enter/Escape)
-- Dynamic input placeholder hint when slash commands are available
-
-## [0.1.1] - 2026-02-10
-
-### Added
-- Login shell resolution on macOS/Linux to fix `spawn npx ENOENT` errors
-
-### Fixed
-- Fixed `autoApprovePermissions` setting: the `allowAll` option was not working due to a value mismatch
-- Removed unimplemented `allowRead` option from `autoApprovePermissions` enum
-
-## [0.1.0] - 2026-02-08
-
-### Added
-- Initial release of ACP Client for VS Code
-- **8 pre-configured agents**: GitHub Copilot, Claude Code, Gemini CLI, Qwen Code, Auggie CLI, Qoder CLI, Codex CLI, OpenCode
-- Interactive chat panel with webview UI
-- Markdown rendering in assistant messages (via `marked`)
-- Inline tool call display with collapsible sections per turn
-- Mode and model picker dropdowns in the chat input toolbar
-- Single-agent model — one agent active at a time with auto-disconnect
-- New conversation confirmation dialog to prevent accidental history loss
-- Session management with tree view (connect/disconnect inline icons)
-- File system handler for agent file operations
-- Terminal handler for agent command execution
-- Permission management with configurable auto-approve policies
-- ACP protocol traffic logging (enabled by default) with message classification (request/response/notification)
-- Client log output channel for debugging
-- ACP agent registry browser
-- Custom ACP logo for activity bar and extension icon
-- Chat state persistence with `retainContextWhenHidden`
-- Keyboard shortcuts: `Ctrl+Shift+A` to open chat, `Escape` to cancel turn
+Auggie Workbench is built from the open-source ACP Client for VS Code foundation. The current changelog tracks the Auggie Workbench fork/package work rather than the upstream ACP Client release history.
