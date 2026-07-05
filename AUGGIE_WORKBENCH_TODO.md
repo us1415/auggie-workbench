@@ -29,7 +29,7 @@ Public references:
 
 - [x] Show recent conversations in the Threads tree.
 - [x] Let user open older conversations from the tree.
-- [ ] Smoke test Threads tree recent/open-latest/open-older flows in the Extension Development Host.
+- [x] Smoke test Threads tree recent/open-latest/open-older flows in the Extension Development Host.
 - [x] Add warning before starting a new conversation.
 - [ ] Make restart/open latest behavior reliable after VS Code reload.
 - [ ] Decide how to represent missing ACP capabilities, especially resume/list/load differences.
@@ -86,7 +86,8 @@ Public references:
 - [x] Render file read/search cards with file/path/query/result summaries when ACP/MCP payloads expose them.
 - [x] Add title fallback parsing for read/search cards when Auggie only exposes path/query text in the card title.
 - [x] Treat `Run ...` / `Execute ...` tool titles as command cards when Auggie search work arrives through execute tools.
-- [ ] Smoke test file/search/external action-card summaries in the Extension Development Host.
+- [x] Smoke test file/search action-card summaries in the Extension Development Host.
+- [ ] Smoke test external/web action-card summaries if Auggie exposes a web-style tool.
 - [ ] If ACP exposes approval-needed events, add Approve/Reject controls.
 - [ ] Keep Activity panel and action cards consistent so the user can see both live progress and review details.
 
@@ -113,7 +114,7 @@ Public references:
 - [ ] Add external/open-in-explorer action if useful.
 - [x] Add Keep All / Discard All actions.
 - [x] Auto-refresh Edits when workspace files are created, saved, renamed, or deleted.
-- [ ] Smoke test Edits untracked/binary/discard controls in the Extension Development Host.
+- [x] Smoke test Edits untracked/binary/discard controls in the Extension Development Host.
 - [ ] Track terminal commands, integration calls, and file diffs as reviewable actions.
 - [x] Use inferred edit-tool state if ACP does not expose explicit edits.
 
@@ -171,7 +172,7 @@ Public references:
 - [x] Smoke test whether Auggie naturally chooses the visible-terminal MCP path from prompts like `Run node --version in the VS Code terminal.`
 - [x] Confirm Auggie no longer remains internal-only for natural visible-terminal prompts.
 - [x] Add richer terminal command cards that parse common ACP/MCP command payload fields and the local visible-terminal MCP summary text.
-- [ ] Smoke test richer terminal command cards in the Extension Development Host.
+- [x] Smoke test richer terminal command cards in the Extension Development Host.
 - [ ] Low priority: add "Add terminal selection/output to Auggie" command and terminal context menu entry.
 - [ ] Low priority: attach selected terminal text to the next prompt as context.
 

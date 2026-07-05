@@ -436,6 +436,28 @@ Edits live-refresh fix on 2026-07-05:
   - `cmd /c npm run lint` passed.
 - Needs dev-host retest: restart dev host, create/save a disposable untracked file, and confirm it appears in Edits without needing an Auggie prompt.
 
+Smoke-test results on 2026-07-05:
+
+- Terminal visible execution/card details passed:
+  - Natural prompt routed through `run_command_in_vscode_terminal_auggie-vscode-terminal`.
+  - Expanded card showed tool, command, terminal id, exit code, timeout/truncation flags, and output.
+  - Remaining polish task: filter PowerShell/VS Code terminal control-sequence noise from card output previews.
+- File/search action cards passed enough for current milestone:
+  - Read card titled `Read 'RELEASE_NOTES_ELECTRON.md'` now shows `Tool: read` and `File: RELEASE_NOTES_ELECTRON.md`.
+  - Execute/search cards titled like `Run \`powershell -Command ...\`` now show `Tool: execute` and `Command: ...`.
+  - External/web-style cards remain untested because no such tool appeared during smoke testing.
+- Edits tab passed:
+  - Existing workspace Git changes appeared.
+  - Untracked files appeared, including `tmp-edits-test.txt`.
+  - Untracked text preview showed added-line content.
+  - Binary untracked files were labeled.
+  - Row-level `Discard` removed the disposable untracked file after confirmation.
+  - `Discard All` was intentionally not tested because the workspace had real-looking changed files.
+- Threads tree passed:
+  - Recent/current threads appeared under the Auggie row.
+  - Active marker displayed.
+  - Opening another thread showed the confirmation prompt and successfully switched active thread when confirmed.
+
 ## Known Issues / Watch Items
 
 - Need user smoke test after each F5 dev-host restart.
@@ -447,7 +469,7 @@ Edits live-refresh fix on 2026-07-05:
 - Rules/Default Context are prompt-context chips, not full Augment index/rules integrations yet.
 - Need to ensure context injection is acceptable to Auggie and not too noisy.
 - Tasks tab uses ACP plan updates, so it only has content when Auggie emits a plan.
-- Edits now shows real Git line deltas, untracked files, binary labels, expandable diff previews, open/diff actions, and guarded discard controls. The controls branch still needs dev-host smoke testing before treating it as stable.
+- Edits now shows real Git line deltas, untracked files, binary labels, expandable diff previews, open/diff actions, and guarded discard controls. Row-level discard passed for a disposable untracked file; `Discard All` remains intentionally untested against non-disposable workspace changes.
 
 ## Next Best Work
 
@@ -474,12 +496,10 @@ Edits live-refresh fix on 2026-07-05:
    - Natural-prompt smoke test also completed: `Run node --version in the VS Code terminal.`
    - Next terminal work is richer command/action cards, not basic connectivity.
 5. Activity cards:
-   - smoke test command activity details in the Extension Development Host
-   - smoke test file read/search card summaries in the Extension Development Host
+   - external/web action-card summaries still need a real tool payload to validate
    - keep terminal selection/output as a later low-priority convenience
 6. Session tree:
-   - smoke test Threads view recent sessions and `Open Latest Thread` toolbar action
-   - smoke test opening older threads from the tree
+   - basic recent/open older/active marker flow passed in dev host
 6. Continue context-menu parity:
    - make Files/Folders nested in-webview lists if feasible
    - decide what Default Context and Rules should really include
