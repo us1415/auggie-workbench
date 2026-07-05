@@ -2014,6 +2014,41 @@
       }
     }
 
+    function isTerminalToolTitle(title) {
+      return /terminal|run_command|run_terminal|vscode-terminal|launch-process|shell/i.test(String(title || ''));
+    }
+
+    function applyTerminalCommandRun(details) {
+      if (!details) return;
+      const bridgeDetails = {
+        name: 'auggie-vscode-terminal',
+        arguments: {
+          command: details.command,
+          args: Array.isArray(details.args) ? details.args : [],
+          cwd: details.cwd || '',
+        },
+        result: {
+          terminalId: details.terminalId,
+          exitCode: details.exitCode,
+          signal: details.signal,
+          timedOut: details.timedOut,
+          truncated: details.truncated,
+          output: details.output || '',
+        },
+      };
+
+      for (let i = chatHistory.length - 1; i >= 0; i--) {
+        const item = chatHistory[i];
+        if (item.kind !== 'toolCall') continue;
+        if (!isTerminalToolTitle(item.title)) continue;
+        item.details = mergeToolDetails(item.details, bridgeDetails);
+        const el = toolCalls[item.toolCallId] || document.getElementById('tc-' + item.toolCallId);
+        renderToolCallDetails(el, item.title, item.details);
+        saveState();
+        return;
+      }
+    }
+
     function addPlan(plan) {
       chatHistory.push({ kind: 'plan', plan: plan });
       addPlanDOM(plan);
@@ -2286,6 +2321,10 @@
 
         case 'fileDiff':
           updateEditDiff(msg.file, msg.diff || '');
+          break;
+
+        case 'terminalCommandRun':
+          applyTerminalCommandRun(msg.details);
           break;
 
         case 'contextPicked':

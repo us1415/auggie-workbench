@@ -7,9 +7,23 @@ import { TerminalHandler, VisibleCommandRequest } from '../handlers/TerminalHand
 import { AcpMcpServer } from '../config/AgentConfig';
 import { log, logError } from '../utils/Logger';
 
+export interface TerminalMcpRunEvent {
+  command: string;
+  args?: string[];
+  cwd?: string;
+  terminalId: string;
+  exitCode: number | null;
+  signal: string | null;
+  timedOut: boolean;
+  truncated: boolean;
+  output: string;
+}
+
 export class TerminalMcpBridge {
   private readonly terminalHandler = new TerminalHandler();
   private readonly token = crypto.randomBytes(24).toString('hex');
+  private readonly onDidRunCommandEmitter = new vscode.EventEmitter<TerminalMcpRunEvent>();
+  readonly onDidRunCommand = this.onDidRunCommandEmitter.event;
   private server: http.Server | null = null;
   private port: number | null = null;
 
@@ -74,6 +88,17 @@ export class TerminalMcpBridge {
       const commandRequest = this.parseCommandRequest(body);
       log(`Terminal MCP bridge run: ${commandRequest.command} ${(commandRequest.args ?? []).join(' ')}`);
       const result = await this.terminalHandler.runVisibleCommand(commandRequest);
+      this.onDidRunCommandEmitter.fire({
+        command: commandRequest.command,
+        args: commandRequest.args,
+        cwd: commandRequest.cwd,
+        terminalId: result.terminalId,
+        exitCode: result.exitCode,
+        signal: result.signal,
+        timedOut: result.timedOut,
+        truncated: result.truncated,
+        output: result.output,
+      });
       this.sendJson(response, 200, result);
     } catch (e: any) {
       logError('Terminal MCP bridge request failed', e);
@@ -131,5 +156,6 @@ export class TerminalMcpBridge {
     this.server = null;
     this.port = null;
     this.terminalHandler.dispose();
+    this.onDidRunCommandEmitter.dispose();
   }
 }

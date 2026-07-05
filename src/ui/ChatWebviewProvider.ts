@@ -946,6 +946,10 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     this.postMessage({ type: 'sessionInfoUpdate', title: title ?? null });
   }
 
+  notifyTerminalCommandRun(details: any): void {
+    this.postMessage({ type: 'terminalCommandRun', details });
+  }
+
   /**
    * Clear the chat history and reset to welcome state.
    * Called when starting a new conversation.

@@ -83,6 +83,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     chatWebviewProvider,
     { webviewOptions: { retainContextWhenHidden: true } },
   );
+  const terminalRunDisposable = terminalMcpBridge.onDidRunCommand((details) => {
+    chatWebviewProvider.notifyTerminalCommandRun(details);
+  });
 
   const statusBarManager = new StatusBarManager(sessionManager);
 
@@ -625,6 +628,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(
     treeView,
     chatViewRegistration,
+    terminalRunDisposable,
     statusBarManager,
     connectAgentCmd,
     connectAuggieCmd,

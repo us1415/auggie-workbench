@@ -395,6 +395,19 @@ Session tree usability pass on 2026-07-04:
   - `cmd /c npm run lint` passed.
 - Needs dev-host smoke test: use the Threads view toolbar history action, expand Auggie under Threads, confirm recent threads are listed, open an older thread, and confirm the active row changes to `active`.
 
+Terminal card detail side-channel fix on 2026-07-05:
+
+- User smoke test showed the expanded visible-terminal MCP card rendered only `Tool: other`.
+- Root cause: Auggie's ACP `tool_call` / `tool_call_update` payload did not include the MCP arguments or result content, even though the extension-host bridge had the command/result locally.
+- `TerminalMcpBridge` now emits a local `onDidRunCommand` event with command, args, cwd, terminal id, exit status, timeout/truncation flags, and output.
+- `ChatWebviewProvider` forwards that event to the webview as `terminalCommandRun`.
+- `media/chatWebview.js` merges that bridge-owned detail payload into the most recent terminal-like tool card and rerenders the expanded details.
+- Verification after this pass:
+  - `node --check media\chatWebview.js` passed.
+  - `cmd /c npm run compile` passed.
+  - `cmd /c npm run lint` passed.
+- Needs dev-host retest: run `Run node --version in the VS Code terminal.`, expand the tool card, and confirm command/output/exit details appear instead of only `Tool: other`.
+
 ## Known Issues / Watch Items
 
 - Need user smoke test after each F5 dev-host restart.

@@ -81,6 +81,7 @@ Public references:
 - [x] Add compact summary text for command actions when ACP/MCP payloads expose command details.
 - [x] Render external integration calls with URL/method/preview rows when ACP/MCP payloads expose them.
 - [x] Render terminal command cards with command text, output preview, and completion status.
+- [x] Add terminal MCP bridge side-channel for command/output details when Auggie ACP tool payloads only say `other`.
 - [x] Render file read/search cards with file/path/query/result summaries when ACP/MCP payloads expose them.
 - [ ] Smoke test file/search/external action-card summaries in the Extension Development Host.
 - [ ] If ACP exposes approval-needed events, add Approve/Reject controls.
