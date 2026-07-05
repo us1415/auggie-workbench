@@ -1850,9 +1850,23 @@
 
     function quotedTitleValue(title) {
       const text = String(title || '');
-      const quoted = text.match(/['"`]([^'"`]+)['"`]/);
-      if (quoted) return quoted[1].trim();
+      const backticked = text.match(/`([^`]+)`/);
+      if (backticked) return backticked[1].trim();
+      const singleQuoted = text.match(/'([^']+)'/);
+      if (singleQuoted) return singleQuoted[1].trim();
+      const doubleQuoted = text.match(/"([^"]+)"/);
+      if (doubleQuoted) return doubleQuoted[1].trim();
       return '';
+    }
+
+    function commandFromTitle(title) {
+      const text = String(title || '');
+      const quoted = quotedTitleValue(text);
+      if (quoted && /\b(run|execute|command|powershell|cmd|shell|terminal)\b/i.test(text)) {
+        return quoted;
+      }
+      const match = text.match(/^\s*(?:run|execute)\s+(.+)$/i);
+      return match ? match[1].trim().replace(/^['"`]+|['"`]+$/g, '') : '';
     }
 
     function filePathFromTitle(title) {
@@ -1878,7 +1892,8 @@
         textFromToolContent(details?.result?.content) ||
         textFromToolContent(details?.output);
       const terminalSummary = parseTerminalSummary(contentText);
-      const command = args.command || details?.command || details?.name || '';
+      const titleCommand = commandFromTitle(title);
+      const command = args.command || details?.command || titleCommand || details?.name || '';
       const commandArgs = Array.isArray(args.args) ? args.args : (Array.isArray(details?.args) ? details.args : []);
       const toolIdentity = [
         title,
@@ -1891,7 +1906,7 @@
         command,
       ].filter(Boolean).join(' '));
       const isFileLike = /\b(read|open|view|write|edit|file|glob|list|ls)\b/i.test(toolIdentity);
-      const isSearchLike = /\b(search|grep|find|ripgrep|rg|query)\b/i.test(toolIdentity);
+      const isSearchLike = !titleCommand && /\b(search|grep|find|ripgrep|rg|query)\b/i.test(toolIdentity);
       const isExternalLike = /\b(web|http|url|fetch|get|browser|request)\b/i.test(toolIdentity);
       const filePath = firstUsefulValue({ details, args }, [
         'args.path',

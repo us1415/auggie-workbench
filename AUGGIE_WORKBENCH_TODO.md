@@ -85,6 +85,7 @@ Public references:
 - [ ] Filter ANSI/OSC/shell-control sequences from terminal card output previews.
 - [x] Render file read/search cards with file/path/query/result summaries when ACP/MCP payloads expose them.
 - [x] Add title fallback parsing for read/search cards when Auggie only exposes path/query text in the card title.
+- [x] Treat `Run ...` / `Execute ...` tool titles as command cards when Auggie search work arrives through execute tools.
 - [ ] Smoke test file/search/external action-card summaries in the Extension Development Host.
 - [ ] If ACP exposes approval-needed events, add Approve/Reject controls.
 - [ ] Keep Activity panel and action cards consistent so the user can see both live progress and review details.

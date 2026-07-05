@@ -416,6 +416,16 @@ Read-card title fallback on 2026-07-05:
 - `media/chatWebview.js` now extracts quoted file paths from read/file-style tool titles and quoted search terms from search-style tool titles as a fallback.
 - Needs dev-host retest: repeat the file-read prompt and confirm the expanded card shows `File: RELEASE_NOTES_ELECTRON.md`.
 
+Execute/search card title fallback on 2026-07-05:
+
+- User smoke test showed search work came through as `execute` cards titled like `Run \`git grep -l "RELEASE_NOTES_ELECTRON"\``.
+- Previous fallback misclassified this as `Query: git grep -l` because embedded quotes broke the quoted-title parser.
+- `media/chatWebview.js` now prefers backtick-delimited title content for `Run ...` / `Execute ...` cards and renders it as `Command`, not `Query`.
+- Verification after this pass:
+  - `node --check media\chatWebview.js` passed.
+  - `cmd /c npm run compile` passed.
+  - `cmd /c npm run lint` passed.
+
 ## Known Issues / Watch Items
 
 - Need user smoke test after each F5 dev-host restart.
