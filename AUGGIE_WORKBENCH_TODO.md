@@ -14,7 +14,8 @@ Public references:
 - [x] Fix duplicate "Opening Auggie..." notifications.
 - [ ] Confirm reload/reopen restores the latest conversation without pressing Start.
 - [ ] Ensure the loading overlay always clears after replaying conversation history.
-- [ ] Confirm `media/chatWebview.js` is included when packaging the extension.
+- [x] Confirm `media/chatWebview.js` is included when packaging the extension.
+- [x] Confirm `scripts/auggie-terminal-mcp.js` is included when packaging the extension.
 
 ## 2. Main Shell Layout
 
@@ -187,6 +188,7 @@ Public references:
 ## 10. Final Cleanup
 
 - [ ] Remove temporary diagnostics.
-- [ ] Run compile and lint.
-- [ ] Package/install locally for a clean smoke test.
+- [x] Run compile and lint.
+- [x] Package locally for a clean smoke test.
+- [ ] Install packaged VSIX on the work machine and confirm it runs beside the original Augment extension.
 - [ ] Commit a stable baseline.

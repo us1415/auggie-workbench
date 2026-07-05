@@ -1,13 +1,18 @@
 .vscode/**
 .vscode-test/**
+.agents/**
+.github/**
 src/**
 out/**
 node_modules/**
 .gitignore
 .gitattributes
 *.map
+*.vsix
 *.ts
-!dist/**
+dist/**/*.map
+dist/**/*.d.ts
+dist/test/**
 tsconfig.json
 webpack.config.js
 eslint.config.mjs
@@ -15,3 +20,5 @@ eslint.config.mjs
 vsc-extension-quickstart.md
 CHANGELOG.md
 resources/icon-ext.svg
+Photos-*.zip
+AUGGIE_*.md

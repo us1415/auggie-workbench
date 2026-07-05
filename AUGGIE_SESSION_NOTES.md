@@ -458,12 +458,33 @@ Smoke-test results on 2026-07-05:
   - Active marker displayed.
   - Opening another thread showed the confirmation prompt and successfully switched active thread when confirmed.
 
+Packaging smoke on 2026-07-05:
+
+- Work branch: `auggie-package-smoke`, stacked on the current smoke-tested Auggie Workbench branch.
+- Extension identity is intentionally separate from the original Augment extension:
+  - publisher: `local`
+  - name: `auggie-workbench`
+  - extension id: `local.auggie-workbench`
+  - display name: `Auggie Workbench`
+- This should install side-by-side with the original Augment extension instead of replacing it.
+- Tightened `.vscodeignore` so the packaged VSIX includes the runtime assets but excludes repo/dev artifacts:
+  - included: `extension/dist/extension.js`, `extension/media/chatWebview.js`, `extension/scripts/auggie-terminal-mcp.js`, package metadata, README, license, and resources.
+  - excluded: `.agents`, `.github`, `AUGGIE_*.md`, `Photos-*.zip`, generated `.vsix`, source maps, declaration files, and dist test output.
+- Built local package: `auggie-workbench-0.2.0.vsix`.
+- `vsce package` reported 12 packaged files and a final size of about 331.52 KB.
+- Verification after packaging pass:
+  - `cmd /c npm run lint` passed.
+  - `cmd /c npm run compile` passed.
+  - `cmd /c npx vsce package --out auggie-workbench-0.2.0.vsix` passed.
+- The generated VSIX is a local install artifact and should not be committed unless explicitly requested.
+
 ## Known Issues / Watch Items
 
 - Need user smoke test after each F5 dev-host restart.
 - Confirm reload/reopen restores latest conversation without pressing Start.
 - Confirm loading overlay always clears after history replay.
 - Confirm `media/chatWebview.js` is included in packaged extension.
+- Confirm `scripts/auggie-terminal-mcp.js` is included in packaged extension.
 - `@` menu is UI-local; Files/Folders still use VS Code dialogs rather than nested in-webview submenus.
 - Files/Folders still use VS Code dialogs; Recently Opened Files is now in-webview.
 - Rules/Default Context are prompt-context chips, not full Augment index/rules integrations yet.
@@ -505,6 +526,7 @@ Smoke-test results on 2026-07-05:
    - decide what Default Context and Rules should really include
 7. Improve message rendering and action-card polish.
 8. Package smoke test and confirm `media/chatWebview.js` is included.
+9. Install `auggie-workbench-0.2.0.vsix` in a clean VS Code profile or the work machine, then confirm the separate Auggie activity view appears alongside the original Augment extension.
 
 ## User Workflow Notes
 
