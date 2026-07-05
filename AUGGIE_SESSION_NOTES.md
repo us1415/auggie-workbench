@@ -477,6 +477,11 @@ Packaging smoke on 2026-07-05:
   - `cmd /c npm run compile` passed.
   - `cmd /c npx vsce package --out auggie-workbench-0.2.0.vsix` passed.
 - The generated VSIX is a local install artifact and should not be committed unless explicitly requested.
+- Follow-up README/package metadata cleanup:
+  - Replaced the upstream ACP Client README with an Auggie Workbench README.
+  - README now documents side-by-side VSIX install, first terminal smoke test, Auggie commands/settings, built-in terminal MCP aliases, development commands, and current limitations.
+  - `package.json` repository, homepage, and bugs URLs now point to `https://github.com/us1415/vscode-acp`.
+  - Rebuilt `auggie-workbench-0.2.0.vsix` so the package includes the updated README and metadata.
 
 ## Known Issues / Watch Items
 

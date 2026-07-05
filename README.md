@@ -1,166 +1,132 @@
-# ACP Client for VS Code
+# Auggie Workbench
 
-A [Visual Studio Code extension](https://marketplace.visualstudio.com/items?itemName=formulahendry.acp-client) that provides a client for the [Agent Client Protocol (ACP)](https://agentclientprotocol.com/) — connect to any ACP-compatible AI coding agent directly from your editor.
+Auggie Workbench is a personal VS Code sidebar for the Auggie CLI, built on the Agent Client Protocol (ACP). It focuses on the coding-agent workflow: chat, thread history, task progress, visible terminal execution, action cards, and reviewable file changes in one workspace view.
 
-![ACP Client Screenshot](resources/screenshot.png)
+This project is based on the open-source ACP Client for VS Code and has been adapted into a focused Auggie experience.
+
+![Auggie Workbench screenshot](resources/screenshot.png)
 
 ## Features
 
-- **Multi-Agent Support**: Connect to 11 pre-configured ACP agents or add your own
-- **Single-Agent Focus**: One agent active at a time — seamlessly switch between agents
-- **Per-Agent Session List**: Each agent in the Agents view is expandable into its previous sessions. Click a session to restore its history in the chat. Backed by `session/list` when the agent supports it, or by a local per-workspace cache otherwise.
-- **Session Config Options**: Dynamic per-session selectors (mode, model, reasoning level, …) advertised by the agent are rendered automatically in the composer toolbar.
-- **Interactive Chat**: Built-in chat panel with Markdown rendering, inline tool call display, and collapsible tool sections
-- **Thinking Display**: See agent reasoning in a collapsible block with streaming animation and elapsed time
-- **Slash Commands**: Autocomplete popup for agent-provided commands with keyboard navigation
-- **Mode & Model Picker**: Switch agent modes and models directly from the chat toolbar (kept for agents that haven't migrated to Session Config Options yet)
-- **File System Integration**: Agents can read and write files in your workspace
-- **Terminal Execution**: Agents can run commands with terminal output display
-- **Permission Management**: Configurable auto-approve policies for agent actions
-- **Protocol Traffic Logging**: Inspect all ACP JSON-RPC messages with request/response/notification labels
-- **Agent Registry**: Browse and discover available ACP agents
-- **Chat Persistence**: Conversations are preserved when switching panels
-
-## Quick Start
-
-1. Install: [Visual Studio Code Marketplace](https://marketplace.visualstudio.com/items?itemName=formulahendry.acp-client) | [Open in VS Code](https://vscode.dev/redirect?url=vscode%3Aextension%2Fformulahendry.acp-client) | [Open VSX Marketplace](https://open-vsx.org/extension/formulahendry/acp-client)
-2. Open the ACP Client panel from the Activity Bar (ACP icon)
-3. Click **+** to add an agent configuration, or use the defaults
-4. Click an agent to connect
-5. Start chatting!
+- **Auggie-first workflow**: Starts Auggie through `npx @augmentcode/auggie@latest --acp` by default.
+- **Thread history**: Shows recent Auggie conversations in the Threads view and lets you reopen older threads when the agent exposes session support.
+- **Workbench tabs**: Thread, Tasks, and Edits views keep chat, plan progress, and workspace changes close together.
+- **Visible terminal bridge**: Provides a built-in MCP server with terminal command tools that run commands in the VS Code integrated terminal.
+- **Reviewable action cards**: Tool calls expand into cards with command, file, search, URL, output, and preview details when the agent exposes them.
+- **Edits review**: Shows changed files, line deltas, untracked files, binary labels, diff previews, Open/Diff actions, and guarded discard controls.
+- **Composer context**: Supports file/folder context chips, recently opened files, selected-code context, and prompt controls.
+- **ACP traffic and logs**: Keeps protocol and workbench output available for debugging.
 
 ## Requirements
 
-- Node.js 18+ (for spawning agent processes)
-- An ACP-compatible agent installed or available via `npx`
+- VS Code 1.85+
+- Node.js 18+
+- `npm` / `npx` available on your PATH
+- Access to run `npx @augmentcode/auggie@latest --acp`
+- Any Auggie authentication or account setup required by your environment
 
-## Pre-configured Agents
+Work machines with locked-down network/proxy settings may need Node/npm/proxy configuration before Auggie can start through `npx`.
 
-The extension comes with default configurations for:
+## Install From VSIX
 
-| Agent | Command |
-|-------|---------|
-| GitHub Copilot | `npx @github/copilot-language-server@latest --acp` |
-| Claude Code | `npx @agentclientprotocol/claude-agent-acp@latest` |
-| Gemini CLI | `npx @google/gemini-cli@latest --experimental-acp` |
-| Qwen Code | `npx @qwen-code/qwen-code@latest --acp --experimental-skills` |
-| Auggie CLI | `npx @augmentcode/auggie@latest --acp` |
-| Qoder CLI | `npx @qoder-ai/qodercli@latest --acp` |
-| Codex CLI | `npx @zed-industries/codex-acp@latest` |
-| OpenCode | `npx opencode-ai@latest acp` |
-| OpenClaw | `npx openclaw acp` |
-| [Kiro CLI](https://kiro.dev/docs/cli/acp/) | `kiro-cli acp` |
-| [Hermes Agent](https://hermes-agent.nousresearch.com/docs/user-guide/features/acp) | `hermes acp` |
+Install the packaged build from this repository:
 
-You can add custom agent configurations in settings.
+```powershell
+code --install-extension auggie-workbench-0.2.0.vsix
+```
 
-> **Note on Hermes Agent**: Hermes is a Python package, not an npm package. Install it via the [Hermes Quickstart](https://hermes-agent.nousresearch.com/docs/getting-started/quickstart) (Linux/macOS/WSL2 only — Windows requires [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install)). Make sure `hermes` is on your `PATH` and launch VS Code from the same shell/venv. Configure credentials with `hermes model`.
+Or in VS Code:
 
-## Extension Settings
+1. Open Extensions.
+2. Choose `...`.
+3. Select `Install from VSIX...`.
+4. Pick `auggie-workbench-0.2.0.vsix`.
+5. Reload VS Code.
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `acp.agents` | *(11 agents)* | Agent configurations. Each key is the agent name, value has `command`, `args`, and `env`. |
-| `acp.autoApprovePermissions` | `ask` | How agent permission requests are handled: `ask` or `allowAll`. |
-| `acp.defaultWorkingDirectory` | `""` | Default working directory for agent sessions. Empty uses current workspace. |
-| `acp.logTraffic` | `true` | Log all ACP protocol traffic to the ACP Traffic output channel. |
+The extension id is `local.auggie-workbench`, so it can be installed beside the original Augment extension without replacing it.
+
+## First Smoke Test
+
+1. Open a workspace in VS Code.
+2. Open the Auggie activity view.
+3. Wait for Auggie to connect, or run `Auggie: Start` from the Command Palette.
+4. Send:
+
+```text
+Run node --version in the VS Code terminal.
+```
+
+Expected result:
+
+- Auggie chooses the visible-terminal MCP tool.
+- A VS Code integrated terminal opens or reuses an Auggie terminal.
+- The terminal runs `node --version`.
+- The thread shows an expandable completed tool card with command, terminal id, exit code, and output.
 
 ## Commands
 
-All commands are accessible via the Command Palette (`Ctrl+Shift+P`):
+Common commands are available from the Command Palette:
 
 | Command | Description |
 |---------|-------------|
-| `ACP: Connect to Agent` | Connect to an agent |
-| `ACP: New Conversation` | Start a new conversation with the connected agent |
-| `ACP: Send Prompt` | Send a message to the agent |
-| `ACP: Cancel Current Turn` | Cancel the current agent turn |
-| `ACP: Disconnect Agent` | Disconnect from the current agent |
-| `ACP: Restart Agent` | Restart the current agent process |
-| `ACP: Open Chat Panel` | Focus the chat webview |
-| `ACP: Add Agent Configuration` | Add a new agent to settings |
-| `ACP: Remove Agent` | Remove an agent configuration |
-| `ACP: Set Agent Mode` | Change the agent's operating mode |
-| `ACP: Set Agent Model` | Change the agent's model |
-| `ACP: Refresh Sessions` | Re-fetch the session list for an agent (also on the agent's right-click menu) |
-| `ACP: Show Log` | Open the ACP Client log output channel |
-| `ACP: Show Protocol Traffic` | Open the ACP Traffic output channel |
-| `ACP: Browse Agent Registry` | Browse the ACP agent registry |
+| `Auggie: Start` | Start/connect Auggie |
+| `Auggie: New Thread` | Start a new conversation |
+| `Auggie: Focus Prompt` | Focus the prompt box |
+| `Auggie: Stop` | Cancel the active turn |
+| `Auggie: Restart` | Restart the Auggie process |
+| `Auggie: Disconnect` | Disconnect the current Auggie process |
+| `Auggie: Open Chat` | Focus the Auggie workbench |
+| `Auggie: Open Latest Thread` | Open the latest known thread |
+| `Auggie: Refresh Threads` | Refresh known threads |
+| `Auggie: Show Log` | Open the Auggie Workbench log |
+| `Auggie: Show Protocol Traffic` | Open ACP protocol traffic logs |
 
-## Keyboard Shortcuts
+## Settings
 
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+Shift+A` (`Cmd+Shift+A` on Mac) | Open Chat Panel |
-| `Escape` (when turn in progress) | Cancel Current Turn |
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `acp.agents` | Auggie CLI | Auggie launch command. Defaults to `npx @augmentcode/auggie@latest --acp`. |
+| `acp.mcpServers` | `{}` | Extra MCP servers to attach to each ACP session. Accepts Auggie-style object config or ACP-style arrays. |
+| `acp.autoApprovePermissions` | `ask` | Permission policy for agent actions. |
+| `acp.defaultWorkingDirectory` | `""` | Default working directory. Empty uses the current workspace. |
+| `acp.logTraffic` | `true` | Log ACP protocol traffic. |
+| `acp.autoConnectAuggie` | `true` | Automatically connect when the Auggie sidebar activates. |
+
+## Built-In Terminal MCP Tools
+
+Auggie Workbench automatically attaches a local MCP server named `auggie-vscode-terminal` to Auggie sessions. It exposes these equivalent tools:
+
+- `run_command_in_vscode_terminal`
+- `run_terminal_command`
+- `run_command`
+- `run_in_vscode_terminal`
+
+All four forward to the same local extension bridge and run commands through the VS Code integrated terminal when possible.
 
 ## Development
 
-### Prerequisites
-
-- Node.js 18+
-- VS Code 1.85+
-
-### Setup
-
-```bash
-git clone https://github.com/formulahendry/vscode-acp.git
-cd vscode-acp
+```powershell
 npm install
-```
-
-### Build & Run
-
-```bash
-npm run compile    # One-time build
-npm run watch      # Watch mode for development
+cmd /c npm run compile
+cmd /c npm run lint
 ```
 
 Press `F5` in VS Code to launch the Extension Development Host.
 
-### Testing
+Package a VSIX:
 
-```bash
-npm run pretest    # Compile tests + lint
-npm test           # Run tests
+```powershell
+cmd /c npx vsce package --out auggie-workbench-0.2.0.vsix
 ```
 
-### Packaging
+## Current Limitations
 
-```bash
-npm run package    # Production build
-npx @vscode/vsce package   # Create .vsix
-```
-
-## Architecture
-
-The extension follows a modular architecture:
-
-- **Core**: `AgentManager`, `ConnectionManager`, `SessionManager`, `AcpClientImpl`
-- **Handlers**: `FileSystemHandler`, `TerminalHandler`, `PermissionHandler`, `SessionUpdateHandler`
-- **UI**: `SessionTreeProvider`, `ChatWebviewProvider`, `StatusBarManager`
-- **Config**: `AgentConfig`, `RegistryClient`
-- **Utils**: `Logger`, `StreamAdapter`
-
-Communication with agents uses the ACP protocol (JSON-RPC 2.0 over stdio).
-
-## Known Issues
-
-- Agents must be available via the system PATH or `npx`
-- Some agents may require additional authentication setup
-- File attachment feature is not yet functional
-
-## Links
-
-- [ACP Client on Visual Studio Code Marketplace](https://marketplace.visualstudio.com/items?itemName=formulahendry.acp-client)
-- [Agent Client Protocol](https://agentclientprotocol.com/)
-- [GitHub Repository](https://github.com/formulahendry/vscode-acp)
-
-## Related Projects
-
-- [ACP UI](https://github.com/formulahendry/acp-ui) — A modern, cross-platform desktop client for the Agent Client Protocol (ACP)
-- [WeChat ACP](https://github.com/formulahendry/wechat-acp) — Bridge WeChat chat messages to any ACP-compatible AI agent (Claude, Codex, Copilot, Qwen, Gemini, OpenCode and more)
+- Auggie decides which tools to use; the terminal MCP bridge makes visible terminal execution available but does not force every command through it.
+- Tasks depend on ACP plan updates or recovered plan-like assistant text.
+- Some action-card details depend on what Auggie exposes in ACP tool payloads.
+- Terminal output previews still need additional ANSI/OSC/control-sequence cleanup.
+- Checkpoints are planned but not implemented yet.
 
 ## License
 
-MIT — see [LICENSE](LICENSE) for details.
+MIT. See [LICENSE](LICENSE) for details.

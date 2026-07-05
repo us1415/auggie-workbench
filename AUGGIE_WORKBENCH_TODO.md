@@ -16,6 +16,7 @@ Public references:
 - [ ] Ensure the loading overlay always clears after replaying conversation history.
 - [x] Confirm `media/chatWebview.js` is included when packaging the extension.
 - [x] Confirm `scripts/auggie-terminal-mcp.js` is included when packaging the extension.
+- [x] Replace upstream ACP Client README with Auggie Workbench install/smoke-test docs.
 
 ## 2. Main Shell Layout
 
@@ -190,5 +191,6 @@ Public references:
 - [ ] Remove temporary diagnostics.
 - [x] Run compile and lint.
 - [x] Package locally for a clean smoke test.
+- [x] Rebuild VSIX after README/package metadata cleanup.
 - [ ] Install packaged VSIX on the work machine and confirm it runs beside the original Augment extension.
 - [ ] Commit a stable baseline.
