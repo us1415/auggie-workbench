@@ -485,6 +485,12 @@ Packaging smoke on 2026-07-05:
 - Changelog cleanup:
   - Replaced the upstream ACP Client release-history changelog with an Auggie Workbench changelog.
   - New changelog covers the 0.2.0 Auggie Workbench package path, terminal MCP bridge, review cards, Edits view, smoke-test results, packaging verification, and known limitations.
+- Hardening review from external critique:
+  - Confirmed `src/ui/ChatWebviewProvider.ts` is 2,874 lines and should be split before adding more slash-menu/message-polish work.
+  - Confirmed existing tests were minimal and still targeted the old extension id.
+  - Updated `src/test/extension.test.ts` to use `local.auggie-workbench` and cover Auggie-specific commands.
+  - `cmd /c npm test` initially failed under restricted network while resolving VS Code test runtime, then passed with network permission: 3 tests passing.
+  - TODO now explicitly prioritizes work-machine VSIX acceptance, test seams, terminal-routing regression checks, provider splitting, and checkpoint/revert scoping before more visual polish.
 
 ## Known Issues / Watch Items
 

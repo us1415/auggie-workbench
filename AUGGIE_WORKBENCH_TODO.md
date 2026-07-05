@@ -181,6 +181,7 @@ Public references:
 
 ## 9. Visual Polish
 
+- [ ] Defer nonessential polish until the packaged VSIX passes the work-machine daily-driver smoke test.
 - [ ] Tighten spacing around messages and composer.
 - [ ] Match menu/dropdown colors to VS Code theme variables.
 - [ ] Use consistent icon buttons and hover states.
@@ -195,3 +196,23 @@ Public references:
 - [x] Rebuild VSIX after README/package metadata cleanup.
 - [ ] Install packaged VSIX on the work machine and confirm it runs beside the original Augment extension.
 - [ ] Commit a stable baseline.
+
+## 11. Hardening Before More Surface Area
+
+- [x] Update the existing VS Code extension test to use the Auggie Workbench extension id.
+- [x] Run `cmd /c npm test` and make the baseline extension tests pass for `local.auggie-workbench`.
+- [ ] Add a small test seam for pure action-card parsing logic before more message rendering work.
+- [ ] Add a small test seam for changed-file snapshot parsing before more Edits/checkpoint work.
+- [ ] Add a local MCP helper test that verifies terminal tool aliases remain advertised.
+- [ ] Add a regression smoke checklist for the soft terminal-routing contract after Auggie CLI updates.
+- [ ] Split `ChatWebviewProvider.ts` before sections 5, 6, and 9 grow further:
+  - changed-file/Git snapshot service
+  - task snapshot persistence helpers
+  - context picker/message handlers
+  - webview HTML/CSS assembly
+- [ ] Scope checkpoints/revert deliberately before implementation:
+  - what state is captured
+  - where checkpoints are stored
+  - tracked vs untracked file behavior
+  - binary-file behavior
+  - restore/discard confirmation UX
