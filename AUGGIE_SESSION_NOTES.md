@@ -426,6 +426,16 @@ Execute/search card title fallback on 2026-07-05:
   - `cmd /c npm run compile` passed.
   - `cmd /c npm run lint` passed.
 
+Edits live-refresh fix on 2026-07-05:
+
+- User created `tmp-edits-test.txt`, but it did not appear in the Edits tab immediately.
+- Root cause: changed-file snapshots refreshed on startup/tool activity/manual requests, but not on ordinary workspace file save/create/delete/rename events.
+- `ChatWebviewProvider` now listens for VS Code file create/delete/rename/save events and schedules the existing changed-files refresh.
+- Verification after this pass:
+  - `cmd /c npm run compile` passed.
+  - `cmd /c npm run lint` passed.
+- Needs dev-host retest: restart dev host, create/save a disposable untracked file, and confirm it appears in Edits without needing an Auggie prompt.
+
 ## Known Issues / Watch Items
 
 - Need user smoke test after each F5 dev-host restart.

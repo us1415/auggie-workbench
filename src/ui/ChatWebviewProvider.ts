@@ -42,6 +42,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
   private autoRestoreRequested = false;
   private webviewMessageDisposable?: vscode.Disposable;
   private changedFilesRefreshTimer?: NodeJS.Timeout;
+  private readonly changedFilesWatchDisposables: vscode.Disposable[] = [];
   private readonly diffBaseContents = new Map<string, string>();
   private readonly diffBaseContentProviderDisposable: vscode.Disposable;
 
@@ -68,6 +69,13 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       {
         provideTextDocumentContent: (uri) => this.diffBaseContents.get(uri.toString()) ?? '',
       },
+    );
+
+    this.changedFilesWatchDisposables.push(
+      vscode.workspace.onDidCreateFiles(() => this.scheduleChangedFilesRefresh()),
+      vscode.workspace.onDidDeleteFiles(() => this.scheduleChangedFilesRefresh()),
+      vscode.workspace.onDidRenameFiles(() => this.scheduleChangedFilesRefresh()),
+      vscode.workspace.onDidSaveTextDocument(() => this.scheduleChangedFilesRefresh()),
     );
   }
 
@@ -2855,6 +2863,9 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     this.sessionUpdateHandler.removeListener(this.updateListener);
     this.webviewMessageDisposable?.dispose();
     this.diffBaseContentProviderDisposable.dispose();
+    for (const disposable of this.changedFilesWatchDisposables) {
+      disposable.dispose();
+    }
     if (this.changedFilesRefreshTimer) {
       clearTimeout(this.changedFilesRefreshTimer);
     }

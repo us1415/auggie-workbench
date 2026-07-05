@@ -112,6 +112,7 @@ Public references:
 - [x] Add open-file/open-diff action.
 - [ ] Add external/open-in-explorer action if useful.
 - [x] Add Keep All / Discard All actions.
+- [x] Auto-refresh Edits when workspace files are created, saved, renamed, or deleted.
 - [ ] Smoke test Edits untracked/binary/discard controls in the Extension Development Host.
 - [ ] Track terminal commands, integration calls, and file diffs as reviewable actions.
 - [x] Use inferred edit-tool state if ACP does not expose explicit edits.
