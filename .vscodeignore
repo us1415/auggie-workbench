@@ -2,6 +2,7 @@
 .vscode-test/**
 .agents/**
 .github/**
+.tmp-screenshots/**
 src/**
 out/**
 node_modules/**

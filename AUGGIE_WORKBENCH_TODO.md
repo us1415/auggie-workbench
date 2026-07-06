@@ -34,7 +34,9 @@ Public references:
 - [x] Let user open older conversations from the tree.
 - [x] Smoke test Threads tree recent/open-latest/open-older flows in the Extension Development Host.
 - [x] Add warning before starting a new conversation.
+- [x] Guard against overlapping older-thread loads so repeated clicks do not stack `Loading session...` notifications.
 - [ ] Make restart/open latest behavior reliable after VS Code reload.
+- [ ] Improve large-history load progress feedback beyond a static `Loading conversation history...` overlay.
 - [ ] Decide how to represent missing ACP capabilities, especially resume/list/load differences.
 
 ## 4. Composer Controls
@@ -174,6 +176,7 @@ Public references:
 - [x] Reverify alias implementation and local checks in `vscode-acp` on 2026-07-04.
 - [x] Smoke test whether Auggie naturally chooses the visible-terminal MCP path from prompts like `Run node --version in the VS Code terminal.`
 - [x] Confirm Auggie no longer remains internal-only for natural visible-terminal prompts.
+- [x] Work-machine smoke test: natural `run git status` request used `run_command_in_vscode_terminal_auggie-vscode-terminal` and ran in the visible VS Code terminal.
 - [x] Add richer terminal command cards that parse common ACP/MCP command payload fields and the local visible-terminal MCP summary text.
 - [x] Smoke test richer terminal command cards in the Extension Development Host.
 - [ ] Low priority: add "Add terminal selection/output to Auggie" command and terminal context menu entry.

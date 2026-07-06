@@ -519,6 +519,20 @@ Packaging smoke on 2026-07-05:
     - HTTP MCP server with headers.
     - `auggie.defaultWorkingDirectory`.
     - `auggie.autoApprovePermissions`, `auggie.logTraffic`, and `auggie.autoConnectAuggie`.
+- Work-machine past-session loading screenshots on 2026-07-06:
+  - User uploaded `Photos-3-001 (4).zip`.
+  - Threads tree populated and older threads could be selected.
+  - Large/older session loads showed `Loading conversation history...` for a noticeable time.
+  - VS Code notifications stacked multiple `Loading session...` toasts.
+  - Output logs showed repeated `SessionManager: attaching 1 MCP server(s) to loaded session`, repeated Auggie `Waiting for 1 MCP server(s) to initialize...`, and a `MaxListenersExceededWarning`.
+  - Likely cause: explicit older-thread opens could overlap when another thread was clicked before the previous load finished.
+  - Added an `auggie.openSession` single-flight guard so a second click during a load focuses the chat and asks the user to wait instead of starting another load.
+  - Remaining polish: add progress detail/counts for large history replay if ACP exposes enough signal; consider suppressing noisy per-event Output logs in normal mode.
+- Work-machine terminal MCP follow-up screenshots:
+  - User uploaded `Photos-3-001 (5).zip`.
+  - Natural `run git status` request used `run_command_in_vscode_terminal_auggie-vscode-terminal`.
+  - The command ran in the visible VS Code terminal and returned a clean working tree.
+  - Auggie also answered that it should prefer `auggie-vscode-terminal` tools for terminal commands; treat this as a good conversational signal, not a permanent protocol guarantee.
 
 ## Known Issues / Watch Items
 

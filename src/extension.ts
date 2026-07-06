@@ -447,6 +447,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     sessionTreeProvider.invalidate(agentName);
   });
 
+  let openSessionInProgress: { agentName: string; sessionId: string } | null = null;
+
   // Open (load or resume) a previously-existing session.
   const openSessionCmd = vscode.commands.registerCommand('auggie.openSession', async (arg?: any) => {
     const agentName: string | undefined = arg?.agentName;
@@ -462,6 +464,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       return;
     }
 
+    if (openSessionInProgress) {
+      const sameSession = openSessionInProgress.agentName === agentName
+        && openSessionInProgress.sessionId === sessionId;
+      vscode.commands.executeCommand('auggie-chat.focus');
+      if (!sameSession) {
+        vscode.window.showInformationMessage('Auggie is still loading the previous thread. Try again after it finishes.');
+      }
+      return;
+    }
+
+    openSessionInProgress = { agentName, sessionId };
+
     // Confirm if there's existing chat content with a different active session.
     if (chatWebviewProvider.hasChatContent) {
       const choice = await vscode.window.showWarningMessage(
@@ -469,7 +483,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         'Open Session',
         'Cancel',
       );
-      if (choice !== 'Open Session') { return; }
+      if (choice !== 'Open Session') {
+        openSessionInProgress = null;
+        return;
+      }
     }
 
     try {
@@ -499,6 +516,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     } catch (e: any) {
       logError('Failed to open session', e);
       vscode.window.showErrorMessage(`Failed to open session: ${e.message}`);
+    } finally {
+      openSessionInProgress = null;
     }
   });
 

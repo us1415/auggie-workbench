@@ -10,6 +10,7 @@ This project started from the open-source ACP Client for VS Code and is now bein
 
 - Added startup failure classification for Auggie/npm stderr so Node engine failures report a useful message instead of only `ACP connection closed`.
 - Captured recent agent stderr lines in the extension host for better connection-failure diagnostics.
+- Guarded older-thread loading so clicking multiple past sessions while one replay is still loading does not start overlapping loads or stack duplicate `Loading session...` notifications.
 
 ### Documentation
 
