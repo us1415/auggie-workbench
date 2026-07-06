@@ -94,7 +94,55 @@ Common commands are available from the Command Palette:
 
 ### Custom Auggie Command
 
-If Auggie is installed as a local binary, put the binary path in `command` and keep `--acp` as an arg:
+Use this when VS Code starts with the wrong Node.js version, when Node is installed in a custom location, or when the work machine needs an explicit binary path.
+
+Open VS Code `settings.json` and set `auggie.agents`. You can use either User settings or Workspace settings.
+
+On Windows, first find the binaries you want Auggie Workbench to use:
+
+```powershell
+where.exe node
+where.exe npx
+where.exe auggie
+```
+
+Or:
+
+```powershell
+Get-Command node,npx,auggie
+```
+
+On macOS, first find the binaries you want Auggie Workbench to use:
+
+```bash
+which node
+which npx
+which auggie
+```
+
+Or:
+
+```bash
+command -v node npx auggie
+```
+
+Recommended direct-binary form: put the Auggie binary in `command` and keep `--acp` in `args`.
+
+```json
+{
+  "auggie.agents": {
+    "Auggie CLI": {
+      "command": "C:\\Users\\you\\AppData\\Roaming\\npm\\auggie.cmd",
+      "args": ["--acp"],
+      "env": {
+        "AUGMENT_DISABLE_AUTO_UPDATE": "1"
+      }
+    }
+  }
+}
+```
+
+If Auggie is installed somewhere else, use that exact path. Homebrew on Apple Silicon often uses `/opt/homebrew/bin`; Intel/Homebrew or other installs may use `/usr/local/bin`:
 
 ```json
 {
@@ -110,7 +158,113 @@ If Auggie is installed as a local binary, put the binary path in `command` and k
 }
 ```
 
-Do not set `command` to `npx` and then pass the local Auggie binary path as the first arg. Use `npx` only for the package form:
+```json
+{
+  "auggie.agents": {
+    "Auggie CLI": {
+      "command": "/usr/local/bin/auggie",
+      "args": ["--acp"],
+      "env": {
+        "AUGMENT_DISABLE_AUTO_UPDATE": "1"
+      }
+    }
+  }
+}
+```
+
+If you want to run Auggie through a specific Node installation, point `command` at that install's `npx.cmd`:
+
+```json
+{
+  "auggie.agents": {
+    "Auggie CLI": {
+      "command": "C:\\Program Files\\nodejs\\npx.cmd",
+      "args": ["@augmentcode/auggie@latest", "--acp"],
+      "env": {
+        "AUGMENT_DISABLE_AUTO_UPDATE": "1"
+      }
+    }
+  }
+}
+```
+
+On macOS, point `command` at the `npx` from the Node 22/23 install you want Auggie to use:
+
+```json
+{
+  "auggie.agents": {
+    "Auggie CLI": {
+      "command": "/opt/homebrew/bin/npx",
+      "args": ["@augmentcode/auggie@latest", "--acp"],
+      "env": {
+        "AUGMENT_DISABLE_AUTO_UPDATE": "1"
+      }
+    }
+  }
+}
+```
+
+```json
+{
+  "auggie.agents": {
+    "Auggie CLI": {
+      "command": "/usr/local/bin/npx",
+      "args": ["@augmentcode/auggie@latest", "--acp"],
+      "env": {
+        "AUGMENT_DISABLE_AUTO_UPDATE": "1"
+      }
+    }
+  }
+}
+```
+
+For Node managers, use the active Node 22/23 path. Examples:
+
+```json
+{
+  "auggie.agents": {
+    "Auggie CLI": {
+      "command": "C:\\Program Files\\nodejs\\npx.cmd",
+      "args": ["@augmentcode/auggie@latest", "--acp"]
+    }
+  }
+}
+```
+
+```json
+{
+  "auggie.agents": {
+    "Auggie CLI": {
+      "command": "C:\\Users\\you\\AppData\\Roaming\\nvm\\v22.14.0\\npx.cmd",
+      "args": ["@augmentcode/auggie@latest", "--acp"]
+    }
+  }
+}
+```
+
+```json
+{
+  "auggie.agents": {
+    "Auggie CLI": {
+      "command": "/Users/you/.nvm/versions/node/v22.14.0/bin/npx",
+      "args": ["@augmentcode/auggie@latest", "--acp"]
+    }
+  }
+}
+```
+
+```json
+{
+  "auggie.agents": {
+    "Auggie CLI": {
+      "command": "/Users/you/.asdf/installs/nodejs/22.14.0/bin/npx",
+      "args": ["@augmentcode/auggie@latest", "--acp"]
+    }
+  }
+}
+```
+
+Do not set `command` to `npx` and then pass a local Auggie binary path as the first arg. Use `npx` only for the package form:
 
 ```json
 {
@@ -122,6 +276,8 @@ Do not set `command` to `npx` and then pass the local Auggie binary path as the 
   }
 }
 ```
+
+Use the direct-binary form when you already have `auggie` installed. Use the `npx.cmd` form when you want npm to fetch/run `@augmentcode/auggie@latest` with a specific Node installation.
 
 ### Node Version
 

@@ -505,6 +505,14 @@ Packaging smoke on 2026-07-05:
   - Added stderr-tail capture and startup-failure classification so this reports as a Node runtime problem instead of only `ACP connection closed`.
   - Version bumped to `0.2.2` for the diagnostic/docs package.
   - User then confirmed the work-machine install was able to run successfully after correcting the environment/config.
+  - Follow-up docs pass expanded `README.md` custom command guidance for choosing the correct Node install:
+    - Windows commands for finding `node`, `npx`, and `auggie`.
+    - macOS commands for finding `node`, `npx`, and `auggie`.
+    - direct `auggie.cmd` config.
+    - direct Homebrew Auggie config.
+    - explicit Node 22/23 `npx.cmd` config.
+    - explicit Homebrew, nvm, and asdf `npx` config examples.
+    - Node-manager/work-machine guidance.
 
 ## Known Issues / Watch Items
 

@@ -197,6 +197,7 @@ Public references:
 - [x] Install packaged VSIX on the work machine and confirm it runs beside the original Augment extension without `acp-sessions` view registration errors.
 - [x] On the work machine, confirm Auggie launches under Node `>=22.14.0 <24` rather than Node 24.
 - [x] On the work machine, retest custom `auggie.agents` direct-binary config with `command` set to the Auggie binary path and `args: ["--acp"]`.
+- [x] Document work-machine custom Node/Auggie command configuration, including explicit Windows/macOS `auggie` and `npx` paths.
 - [ ] Commit a stable baseline.
 
 ## 11. Hardening Before More Surface Area

@@ -17,6 +17,14 @@ This project started from the open-source ACP Client for VS Code and is now bein
   - direct binary path goes in `command`
   - `--acp` stays in `args`
   - `npx` should only be used with the package form `@augmentcode/auggie@latest`
+- Expanded custom command documentation for work machines with custom Node installs:
+  - how to find `node`, `npx`, and `auggie` paths on Windows
+  - how to find `node`, `npx`, and `auggie` paths on macOS
+  - direct `auggie.cmd` example
+  - direct Homebrew `/opt/homebrew/bin/auggie` and `/usr/local/bin/auggie` examples
+  - explicit Node 22/23 `npx.cmd` examples
+  - explicit Homebrew, nvm, and asdf `npx` examples
+  - guidance for Node managers and locked-down work environments
 - Documented the work-machine failure where Auggie rejects Node `v24.4.0`; Auggie currently requires Node `>=22.14.0 <24`.
 
 ## [0.2.1] - 2026-07-06
