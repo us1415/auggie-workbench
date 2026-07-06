@@ -2,7 +2,7 @@
   "name": "auggie-workbench",
   "displayName": "Auggie Workbench",
   "description": "Auggie-powered VS Code sidebar over Agent Client Protocol, with a focused coding-agent workflow.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "local",
   "license": "MIT",
   "icon": "resources/icon.png",
@@ -34,21 +34,21 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "acp-client",
+          "id": "auggie-workbench",
           "title": "Auggie",
           "icon": "resources/icon.svg"
         }
       ]
     },
     "views": {
-      "acp-client": [
+      "auggie-workbench": [
         {
-          "id": "acp-sessions",
+          "id": "auggie-sessions",
           "name": "Threads",
           "type": "tree"
         },
         {
-          "id": "acp-chat",
+          "id": "auggie-chat",
           "name": "Auggie",
           "type": "webview"
         }
@@ -56,113 +56,113 @@
     },
     "viewsWelcome": [
       {
-        "view": "acp-sessions",
-        "contents": "No Auggie threads yet.\n[New Thread](command:acp.newConversation)"
+        "view": "auggie-sessions",
+        "contents": "No Auggie threads yet.\n[New Thread](command:auggie.newConversation)"
       },
       {
-        "view": "acp-chat",
-        "contents": "Open Auggie and start working in this workspace.\n[Start Auggie](command:acp.connectAuggie)"
+        "view": "auggie-chat",
+        "contents": "Open Auggie and start working in this workspace.\n[Start Auggie](command:auggie.connectAuggie)"
       }
     ],
     "commands": [
       {
-        "command": "acp.connectAuggie",
+        "command": "auggie.connectAuggie",
         "title": "Auggie: Start"
       },
       {
-        "command": "acp.connectAgent",
+        "command": "auggie.connectAgent",
         "title": "Auggie: Connect",
         "icon": "$(plug)"
       },
       {
-        "command": "acp.newConversation",
+        "command": "auggie.newConversation",
         "title": "Auggie: New Thread",
         "icon": "$(add)"
       },
       {
-        "command": "acp.sendPrompt",
+        "command": "auggie.sendPrompt",
         "title": "Auggie: Focus Prompt"
       },
       {
-        "command": "acp.cancelTurn",
+        "command": "auggie.cancelTurn",
         "title": "Auggie: Stop",
         "icon": "$(debug-stop)"
       },
       {
-        "command": "acp.disconnectAgent",
+        "command": "auggie.disconnectAgent",
         "title": "Auggie: Disconnect",
         "icon": "$(debug-disconnect)"
       },
       {
-        "command": "acp.openChat",
+        "command": "auggie.openChat",
         "title": "Auggie: Open Chat"
       },
       {
-        "command": "acp.openLatestThread",
+        "command": "auggie.openLatestThread",
         "title": "Auggie: Open Latest Thread",
         "icon": "$(history)"
       },
       {
-        "command": "acp.addAgent",
+        "command": "auggie.addAgent",
         "title": "Auggie: Configure Launch Command",
         "icon": "$(add)"
       },
       {
-        "command": "acp.removeAgent",
+        "command": "auggie.removeAgent",
         "title": "Auggie: Remove Launch Command"
       },
       {
-        "command": "acp.showLog",
+        "command": "auggie.showLog",
         "title": "Auggie: Show Log"
       },
       {
-        "command": "acp.showTraffic",
+        "command": "auggie.showTraffic",
         "title": "Auggie: Show Protocol Traffic"
       },
       {
-        "command": "acp.browseRegistry",
+        "command": "auggie.browseRegistry",
         "title": "Auggie: Browse ACP Registry"
       },
       {
-        "command": "acp.setMode",
+        "command": "auggie.setMode",
         "title": "Auggie: Set Mode"
       },
       {
-        "command": "acp.setModel",
+        "command": "auggie.setModel",
         "title": "Auggie: Set Model"
       },
       {
-        "command": "acp.attachFile",
+        "command": "auggie.attachFile",
         "title": "Auggie: Attach File",
         "icon": "$(attach)"
       },
       {
-        "command": "acp.refreshAgents",
+        "command": "auggie.refreshAgents",
         "title": "Refresh",
         "icon": "$(refresh)"
       },
       {
-        "command": "acp.refreshSessions",
+        "command": "auggie.refreshSessions",
         "title": "Auggie: Refresh Threads"
       },
       {
-        "command": "acp.openSession",
+        "command": "auggie.openSession",
         "title": "Auggie: Open Thread"
       },
       {
-        "command": "acp.loadMoreSessions",
+        "command": "auggie.loadMoreSessions",
         "title": "Auggie: Load More Threads"
       },
       {
-        "command": "acp.copySessionId",
+        "command": "auggie.copySessionId",
         "title": "Copy Session ID"
       },
       {
-        "command": "acp.forgetSession",
+        "command": "auggie.forgetSession",
         "title": "Forget Session"
       },
       {
-        "command": "acp.restartAgent",
+        "command": "auggie.restartAgent",
         "title": "Auggie: Restart",
         "icon": "$(debug-restart)"
       }
@@ -170,127 +170,127 @@
     "menus": {
       "commandPalette": [
         {
-          "command": "acp.openSession",
+          "command": "auggie.openSession",
           "when": "false"
         },
         {
-          "command": "acp.loadMoreSessions",
+          "command": "auggie.loadMoreSessions",
           "when": "false"
         },
         {
-          "command": "acp.copySessionId",
+          "command": "auggie.copySessionId",
           "when": "false"
         },
         {
-          "command": "acp.forgetSession",
+          "command": "auggie.forgetSession",
           "when": "false"
         }
       ],
       "view/title": [
         {
-          "command": "acp.addAgent",
+          "command": "auggie.addAgent",
           "when": "false",
           "group": "navigation@1"
         },
         {
-          "command": "acp.refreshAgents",
-          "when": "view == acp-sessions",
+          "command": "auggie.refreshAgents",
+          "when": "view == auggie-sessions",
           "group": "navigation@3"
         },
         {
-          "command": "acp.openLatestThread",
-          "when": "view == acp-sessions",
+          "command": "auggie.openLatestThread",
+          "when": "view == auggie-sessions",
           "group": "navigation@2"
         },
         {
-          "command": "acp.browseRegistry",
+          "command": "auggie.browseRegistry",
           "when": "false"
         },
         {
-          "command": "acp.newConversation",
-          "when": "view == acp-chat",
+          "command": "auggie.newConversation",
+          "when": "view == auggie-chat",
           "group": "navigation@1"
         },
         {
-          "command": "acp.attachFile",
-          "when": "view == acp-chat",
+          "command": "auggie.attachFile",
+          "when": "view == auggie-chat",
           "group": "navigation@2"
         },
         {
-          "command": "acp.cancelTurn",
-          "when": "view == acp-chat && acp.turnInProgress",
+          "command": "auggie.cancelTurn",
+          "when": "view == auggie-chat && auggie.turnInProgress",
           "group": "navigation@3"
         },
         {
-          "command": "acp.disconnectAgent",
-          "when": "view == acp-chat",
+          "command": "auggie.disconnectAgent",
+          "when": "view == auggie-chat",
           "group": "navigation@4"
         },
         {
-          "command": "acp.showLog",
-          "when": "view == acp-chat"
+          "command": "auggie.showLog",
+          "when": "view == auggie-chat"
         },
         {
-          "command": "acp.showTraffic",
-          "when": "view == acp-chat"
+          "command": "auggie.showTraffic",
+          "when": "view == auggie-chat"
         },
         {
-          "command": "acp.restartAgent",
-          "when": "view == acp-chat"
+          "command": "auggie.restartAgent",
+          "when": "view == auggie-chat"
         }
       ],
       "view/item/context": [
         {
-          "command": "acp.connectAgent",
-          "when": "view == acp-sessions && viewItem == agent-disconnected",
+          "command": "auggie.connectAgent",
+          "when": "view == auggie-sessions && viewItem == agent-disconnected",
           "group": "inline"
         },
         {
-          "command": "acp.disconnectAgent",
-          "when": "view == acp-sessions && viewItem == agent-connected",
+          "command": "auggie.disconnectAgent",
+          "when": "view == auggie-sessions && viewItem == agent-connected",
           "group": "inline"
         },
         {
-          "command": "acp.removeAgent",
+          "command": "auggie.removeAgent",
           "when": "false"
         },
         {
-          "command": "acp.restartAgent",
-          "when": "view == acp-sessions && viewItem == agent-connected"
+          "command": "auggie.restartAgent",
+          "when": "view == auggie-sessions && viewItem == agent-connected"
         },
         {
-          "command": "acp.refreshSessions",
-          "when": "view == acp-sessions && viewItem =~ /^agent/",
+          "command": "auggie.refreshSessions",
+          "when": "view == auggie-sessions && viewItem =~ /^agent/",
           "group": "session@1"
         },
         {
-          "command": "acp.copySessionId",
-          "when": "view == acp-sessions && viewItem =~ /^session/",
+          "command": "auggie.copySessionId",
+          "when": "view == auggie-sessions && viewItem =~ /^session/",
           "group": "session@1"
         },
         {
-          "command": "acp.forgetSession",
-          "when": "view == acp-sessions && viewItem == session-local",
+          "command": "auggie.forgetSession",
+          "when": "view == auggie-sessions && viewItem == session-local",
           "group": "session@2"
         }
       ]
     },
     "keybindings": [
       {
-        "command": "acp.openChat",
+        "command": "auggie.openChat",
         "key": "ctrl+shift+a",
         "mac": "cmd+shift+a"
       },
       {
-        "command": "acp.cancelTurn",
+        "command": "auggie.cancelTurn",
         "key": "escape",
-        "when": "acp.turnInProgress"
+        "when": "auggie.turnInProgress"
       }
     ],
     "configuration": {
       "title": "Auggie Workbench",
       "properties": {
-        "acp.agents": {
+        "auggie.agents": {
           "type": "object",
           "description": "Auggie ACP launch configuration.",
           "default": {
@@ -306,7 +306,7 @@
             }
           }
         },
-        "acp.mcpServers": {
+        "auggie.mcpServers": {
           "description": "MCP servers to attach to every ACP session. Accepts either an ACP-style array or Auggie's documented object keyed by server name.",
           "default": {},
           "oneOf": [
@@ -318,7 +318,7 @@
             }
           ]
         },
-        "acp.autoApprovePermissions": {
+        "auggie.autoApprovePermissions": {
           "type": "string",
           "enum": [
             "ask",
@@ -327,17 +327,17 @@
           "default": "ask",
           "description": "Automatically approve agent permission requests. 'ask' always prompts, 'allowAll' approves everything."
         },
-        "acp.defaultWorkingDirectory": {
+        "auggie.defaultWorkingDirectory": {
           "type": "string",
           "default": "",
           "description": "Default working directory for agent sessions. Leave empty to use the current workspace folder."
         },
-        "acp.logTraffic": {
+        "auggie.logTraffic": {
           "type": "boolean",
           "default": true,
           "description": "Log all ACP protocol traffic to the output channel."
         },
-        "acp.autoConnectAuggie": {
+        "auggie.autoConnectAuggie": {
           "type": "boolean",
           "default": true,
           "description": "Automatically connect to Auggie when the sidebar activates."

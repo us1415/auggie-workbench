@@ -10,7 +10,7 @@ import type { RequestPermissionRequest, RequestPermissionResponse } from '@agent
  */
 export class PermissionHandler {
   async requestPermission(params: RequestPermissionRequest): Promise<RequestPermissionResponse> {
-    const config = vscode.workspace.getConfiguration('acp');
+    const config = vscode.workspace.getConfiguration('auggie');
     const autoApprove = config.get<string>('autoApprovePermissions', 'none');
 
     const title = params.toolCall?.title || 'Permission Request';

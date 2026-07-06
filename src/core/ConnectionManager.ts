@@ -76,7 +76,7 @@ export class ConnectionManager {
     const initResponse = await connection.initialize({
       protocolVersion: PROTOCOL_VERSION,
       clientInfo: {
-        name: 'vscode-acp-client',
+        name: 'auggie-workbench',
         version: extensionVersion,
       },
       clientCapabilities: {

@@ -43,7 +43,7 @@ export interface AgentConfigEntry {
  * Returns a map of agent name → config.
  */
 export function getAgentConfigs(): Record<string, AgentConfigEntry> {
-  const config = vscode.workspace.getConfiguration('acp');
+  const config = vscode.workspace.getConfiguration('auggie');
   const agents = config.get<Record<string, AgentConfigEntry>>('agents', {});
   return agents;
 }
@@ -122,14 +122,14 @@ function normalizeMcpServers(configValue: McpServerConfig | undefined): AcpMcpSe
 /**
  * MCP servers passed to ACP session/new, session/load, and session/resume.
  *
- * Global `acp.mcpServers` applies to every agent. Per-agent `mcpServers`
+ * Global `auggie.mcpServers` applies to every agent. Per-agent `mcpServers`
  * are appended afterward so a specific agent can add its own tools.
  *
  * Accept both the ACP-client list shape and Auggie's documented
  * `mcpServers: { name: { ... } }` settings shape.
  */
 export function getMcpServers(agentName: string): AcpMcpServer[] {
-  const config = vscode.workspace.getConfiguration('acp');
+  const config = vscode.workspace.getConfiguration('auggie');
   const globalServers = config.get<McpServerConfig>('mcpServers', []);
   const agentServers = getAgentConfig(agentName)?.mcpServers;
   return [...normalizeMcpServers(globalServers), ...normalizeMcpServers(agentServers)];

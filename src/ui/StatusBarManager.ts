@@ -12,7 +12,7 @@ export class StatusBarManager {
       vscode.StatusBarAlignment.Left,
       100,
     );
-    this.statusBarItem.command = 'acp.connectAuggie';
+    this.statusBarItem.command = 'auggie.connectAuggie';
     this.updateStatus();
 
     // Update on agent changes

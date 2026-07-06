@@ -33,7 +33,7 @@ type ChangedFileSnapshot = {
  * Renders chat messages, tool calls, plans, and handles user input.
  */
 export class ChatWebviewProvider implements vscode.WebviewViewProvider {
-  public static readonly viewType = 'acp-chat';
+  public static readonly viewType = 'auggie-chat';
 
   private view?: vscode.WebviewView;
   private updateListener: SessionUpdateListener;

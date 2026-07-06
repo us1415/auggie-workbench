@@ -15,14 +15,14 @@ suite('Extension Test Suite', () => {
 		assert.strictEqual(ext.isActive, true);
 	});
 
-	test('Should register ACP commands', async () => {
+	test('Should register Auggie commands', async () => {
 		const commands = await vscode.commands.getCommands(true);
-		const acpCommands = commands.filter(c => c.startsWith('acp.'));
-		assert.ok(acpCommands.length > 0, 'ACP commands should be registered');
-		assert.ok(acpCommands.includes('acp.connectAuggie'), 'connectAuggie command should exist');
-		assert.ok(acpCommands.includes('acp.connectAgent'), 'connectAgent command should exist');
-		assert.ok(acpCommands.includes('acp.newConversation'), 'newConversation command should exist');
-		assert.ok(acpCommands.includes('acp.openChat'), 'openChat command should exist');
-		assert.ok(acpCommands.includes('acp.openLatestThread'), 'openLatestThread command should exist');
+		const auggieCommands = commands.filter(c => c.startsWith('auggie.'));
+		assert.ok(auggieCommands.length > 0, 'Auggie commands should be registered');
+		assert.ok(auggieCommands.includes('auggie.connectAuggie'), 'connectAuggie command should exist');
+		assert.ok(auggieCommands.includes('auggie.connectAgent'), 'connectAgent command should exist');
+		assert.ok(auggieCommands.includes('auggie.newConversation'), 'newConversation command should exist');
+		assert.ok(auggieCommands.includes('auggie.openChat'), 'openChat command should exist');
+		assert.ok(auggieCommands.includes('auggie.openLatestThread'), 'openLatestThread command should exist');
 	});
 });

@@ -25,7 +25,7 @@ export class AgentTreeItem extends vscode.TreeItem {
         new vscode.ThemeColor('testing.iconPassed'),
       );
       this.description = 'connected';
-      this.command = { command: 'acp.openChat', title: 'Open Auggie' };
+      this.command = { command: 'auggie.openChat', title: 'Open Auggie' };
     } else {
       this.contextValue = 'agent-disconnected';
       this.iconPath = new vscode.ThemeIcon('circle-outline');
@@ -40,7 +40,7 @@ export class AgentTreeItem extends vscode.TreeItem {
 
 /**
  * Tier-2 — a session belonging to an agent. Clicking it routes to
- * `acp.openSession` which calls `session/load` or `session/resume`.
+ * `auggie.openSession` which calls `session/load` or `session/resume`.
  */
 export class SessionTreeItem extends vscode.TreeItem {
   constructor(
@@ -65,7 +65,7 @@ export class SessionTreeItem extends vscode.TreeItem {
       this.iconPath = new vscode.ThemeIcon('comment-discussion');
     }
     this.command = {
-      command: 'acp.openSession',
+      command: 'auggie.openSession',
       title: 'Open Thread',
       arguments: [{ agentName, sessionId }],
     };
@@ -299,7 +299,7 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<AgentNode | 
         'Load more…',
         undefined,
         {
-          command: 'acp.loadMoreSessions',
+          command: 'auggie.loadMoreSessions',
           title: 'Load more threads',
           arguments: [agentName],
         },
@@ -478,7 +478,7 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<AgentNode | 
       'Sign in required',
       'Click to retry Auggie sign in.',
       {
-        command: 'acp.connectAgent',
+        command: 'auggie.connectAgent',
         title: 'Retry Auggie',
         arguments: [agentName],
       },
@@ -492,7 +492,7 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<AgentNode | 
       'Failed to load threads',
       message,
       {
-        command: 'acp.refreshSessions',
+        command: 'auggie.refreshSessions',
         title: 'Retry',
         arguments: [agentName],
       },

@@ -4,6 +4,19 @@ All notable changes to Auggie Workbench are documented here.
 
 This project started from the open-source ACP Client for VS Code and is now being shaped into a focused Auggie CLI workbench. Older ACP Client release history is intentionally not repeated here because this branch is tracking the Auggie Workbench fork/package path.
 
+## [0.2.1] - 2026-07-06
+
+### Fixed
+
+- Fixed side-by-side installation with the original ACP Client / Augment-related extensions by namespacing Auggie Workbench contribution IDs:
+  - view container id: `auggie-workbench`
+  - thread tree view id: `auggie-sessions`
+  - chat view id: `auggie-chat`
+  - commands: `auggie.*`
+  - turn-in-progress context key: `auggie.turnInProgress`
+- Moved this fork's contributed settings from `acp.*` to `auggie.*` so Auggie Workbench no longer shares configuration keys with the original ACP Client extension.
+- Updated the VS Code extension test baseline to assert the `auggie.*` command namespace.
+
 ## [0.2.0] - 2026-07-05
 
 ### Added

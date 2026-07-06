@@ -194,13 +194,15 @@ Public references:
 - [x] Run compile and lint.
 - [x] Package locally for a clean smoke test.
 - [x] Rebuild VSIX after README/package metadata cleanup.
-- [ ] Install packaged VSIX on the work machine and confirm it runs beside the original Augment extension.
+- [ ] Install packaged VSIX on the work machine and confirm it runs beside the original Augment extension without `acp-sessions` view registration errors.
 - [ ] Commit a stable baseline.
 
 ## 11. Hardening Before More Surface Area
 
 - [x] Update the existing VS Code extension test to use the Auggie Workbench extension id.
 - [x] Run `cmd /c npm test` and make the baseline extension tests pass for `local.auggie-workbench`.
+- [x] Namespace view/container/command ids away from `acp-*` / `acp.*` so the extension can coexist with the original ACP Client extension.
+- [x] Move Auggie Workbench contributed settings from `acp.*` to `auggie.*`.
 - [ ] Add a small test seam for pure action-card parsing logic before more message rendering work.
 - [ ] Add a small test seam for changed-file snapshot parsing before more Edits/checkpoint work.
 - [ ] Add a local MCP helper test that verifies terminal tool aliases remain advertised.

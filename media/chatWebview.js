@@ -858,9 +858,9 @@
 
     const welcomeConnectAgent = document.getElementById('welcomeConnectAgent');
     const welcomeAddAgent = document.getElementById('welcomeAddAgent');
-    if (welcomeConnectAgent) welcomeConnectAgent.addEventListener('click', () => execCmd('acp.connectAuggie'));
+    if (welcomeConnectAgent) welcomeConnectAgent.addEventListener('click', () => execCmd('auggie.connectAuggie'));
     if (welcomeAddAgent) welcomeAddAgent.addEventListener('click', () => execCmd('workbench.action.openSettings'));
-    if (headerNewThreadBtn) headerNewThreadBtn.addEventListener('click', () => execCmd('acp.newConversation'));
+    if (headerNewThreadBtn) headerNewThreadBtn.addEventListener('click', () => execCmd('auggie.newConversation'));
     for (const tab of workbenchTabs) {
       tab.addEventListener('click', () => setActiveWorkbenchView(tab.dataset.view || 'thread'));
     }
@@ -891,7 +891,7 @@
     if (bottomAttachBtn) bottomAttachBtn.addEventListener('click', () => vscode.postMessage({ type: 'pickContext', kind: 'file' }));
     if (editsKeepAllBtn) editsKeepAllBtn.addEventListener('click', () => vscode.postMessage({ type: 'keepAllChanges' }));
     if (editsDiscardAllBtn) editsDiscardAllBtn.addEventListener('click', () => vscode.postMessage({ type: 'discardAllChanges' }));
-    if (composerNewThreadBtn) composerNewThreadBtn.addEventListener('click', () => execCmd('acp.newConversation'));
+    if (composerNewThreadBtn) composerNewThreadBtn.addEventListener('click', () => execCmd('auggie.newConversation'));
     if (enhancePromptBtn) enhancePromptBtn.addEventListener('click', () => {
       if (!promptInput.value.trim()) {
         promptInput.value = 'Make this request clearer and more actionable: ';

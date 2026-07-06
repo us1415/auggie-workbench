@@ -35,7 +35,7 @@ export function logError(message: string, error?: unknown): void {
 }
 
 export function logTraffic(direction: 'send' | 'recv', data: unknown): void {
-  const config = vscode.workspace.getConfiguration('acp');
+  const config = vscode.workspace.getConfiguration('auggie');
   if (!config.get<boolean>('logTraffic', true)) {
     return;
   }

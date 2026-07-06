@@ -68,7 +68,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // --- UI ---
   const workspaceCwd = () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   const sessionTreeProvider = new SessionTreeProvider(sessionManager, historyStore, workspaceCwd);
-  const treeView = vscode.window.createTreeView('acp-sessions', {
+  const treeView = vscode.window.createTreeView('auggie-sessions', {
     treeDataProvider: sessionTreeProvider,
   });
 
@@ -146,7 +146,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
       const activeSession = sessionManager.getActiveSession();
       if (activeSession) {
-        await vscode.commands.executeCommand('acp-chat.focus');
+        await vscode.commands.executeCommand('auggie-chat.focus');
         return;
       }
 
@@ -202,7 +202,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
       if (!restored) {
         if (options.showProgress) {
-          await vscode.commands.executeCommand('acp.connectAgent', AUGGIE_AGENT_NAME);
+          await vscode.commands.executeCommand('auggie.connectAgent', AUGGIE_AGENT_NAME);
         } else {
           await vscode.window.withProgress(
             {
@@ -211,12 +211,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
               cancellable: false,
             },
             async () => {
-              await vscode.commands.executeCommand('acp.connectAgent', AUGGIE_AGENT_NAME);
+              await vscode.commands.executeCommand('auggie.connectAgent', AUGGIE_AGENT_NAME);
             }
           );
         }
       }
-      await vscode.commands.executeCommand('acp-chat.focus');
+      await vscode.commands.executeCommand('auggie-chat.focus');
     } finally {
       isOpeningAuggieThread = false;
     }
@@ -227,7 +227,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // --- Commands ---
 
   // Connect to Agent (primary action — inline icon in tree or pick from list)
-  const connectAgentCmd = vscode.commands.registerCommand('acp.connectAgent', async (agentNameOrItem?: string | any) => {
+  const connectAgentCmd = vscode.commands.registerCommand('auggie.connectAgent', async (agentNameOrItem?: string | any) => {
     // Handle tree item object or string
     let agentName: string | undefined;
     if (typeof agentNameOrItem === 'string') {
@@ -240,7 +240,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const agentNames = getAgentNames();
       if (agentNames.length === 0) {
         vscode.window.showWarningMessage(
-          'No ACP agents configured. Add agents in Settings > ACP > Agents.',
+          'No ACP agents configured. Add agents in Settings > Auggie > Agents.',
         );
         return;
       }
@@ -281,21 +281,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
 
   // Start Auggie directly, bypassing the generic agent picker.
-  const connectAuggieCmd = vscode.commands.registerCommand('acp.connectAuggie', async () => {
+  const connectAuggieCmd = vscode.commands.registerCommand('auggie.connectAuggie', async () => {
     await openLatestAuggieThread({ showProgress: true });
   });
 
-  const openLatestThreadCmd = vscode.commands.registerCommand('acp.openLatestThread', async () => {
+  const openLatestThreadCmd = vscode.commands.registerCommand('auggie.openLatestThread', async () => {
     await openLatestAuggieThread({ showProgress: true });
     sessionTreeProvider.invalidate(AUGGIE_AGENT_NAME);
   });
 
   // New Conversation (disconnect + clear chat + reconnect same agent)
-  const newConversationCmd = vscode.commands.registerCommand('acp.newConversation', async (opts?: { skipConfirm?: boolean }) => {
+  const newConversationCmd = vscode.commands.registerCommand('auggie.newConversation', async (opts?: { skipConfirm?: boolean }) => {
     const activeSession = sessionManager.getActiveSession();
     if (!activeSession) {
       // No active agent — fall back to connect
-      await vscode.commands.executeCommand('acp.connectAgent');
+      await vscode.commands.executeCommand('auggie.connectAgent');
       return;
     }
 
@@ -327,7 +327,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
 
   // Disconnect Agent
-  const disconnectAgentCmd = vscode.commands.registerCommand('acp.disconnectAgent', async (item?: any) => {
+  const disconnectAgentCmd = vscode.commands.registerCommand('auggie.disconnectAgent', async (item?: any) => {
     const agentName = item?.agentName || sessionManager.getActiveAgentName();
     if (!agentName) {
       vscode.window.showInformationMessage('No agent connected.');
@@ -338,17 +338,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
 
   // Open Chat
-  const openChatCmd = vscode.commands.registerCommand('acp.openChat', () => {
-    vscode.commands.executeCommand('acp-chat.focus');
+  const openChatCmd = vscode.commands.registerCommand('auggie.openChat', () => {
+    vscode.commands.executeCommand('auggie-chat.focus');
   });
 
   // Send Prompt (from keybinding — just focus chat)
-  const sendPromptCmd = vscode.commands.registerCommand('acp.sendPrompt', async () => {
-    vscode.commands.executeCommand('acp-chat.focus');
+  const sendPromptCmd = vscode.commands.registerCommand('auggie.sendPrompt', async () => {
+    vscode.commands.executeCommand('auggie-chat.focus');
   });
 
   // Cancel Turn
-  const cancelTurnCmd = vscode.commands.registerCommand('acp.cancelTurn', async () => {
+  const cancelTurnCmd = vscode.commands.registerCommand('auggie.cancelTurn', async () => {
     const activeId = sessionManager.getActiveSessionId();
     if (activeId) {
       try {
@@ -360,7 +360,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
 
   // Restart Agent
-  const restartAgentCmd = vscode.commands.registerCommand('acp.restartAgent', async () => {
+  const restartAgentCmd = vscode.commands.registerCommand('auggie.restartAgent', async () => {
     const activeSession = sessionManager.getActiveSession();
     if (!activeSession) { return; }
 
@@ -384,19 +384,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
 
   // Show Log
-  const showLogCmd = vscode.commands.registerCommand('acp.showLog', () => {
+  const showLogCmd = vscode.commands.registerCommand('auggie.showLog', () => {
     sendEvent('command/showLog');
     getOutputChannel().show();
   });
 
   // Show Traffic
-  const showTrafficCmd = vscode.commands.registerCommand('acp.showTraffic', () => {
+  const showTrafficCmd = vscode.commands.registerCommand('auggie.showTraffic', () => {
     sendEvent('command/showTraffic');
     getTrafficChannel().show();
   });
 
   // Set Mode
-  const setModeCmd = vscode.commands.registerCommand('acp.setMode', async (modeId?: string) => {
+  const setModeCmd = vscode.commands.registerCommand('auggie.setMode', async (modeId?: string) => {
     const activeId = sessionManager.getActiveSessionId();
     if (!activeId) { return; }
 
@@ -416,7 +416,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
 
   // Set Model
-  const setModelCmd = vscode.commands.registerCommand('acp.setModel', async (modelId?: string) => {
+  const setModelCmd = vscode.commands.registerCommand('auggie.setModel', async (modelId?: string) => {
     const activeId = sessionManager.getActiveSessionId();
     if (!activeId) { return; }
 
@@ -436,19 +436,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
 
   // Refresh Agents tree
-  const refreshAgentsCmd = vscode.commands.registerCommand('acp.refreshAgents', () => {
+  const refreshAgentsCmd = vscode.commands.registerCommand('auggie.refreshAgents', () => {
     sessionTreeProvider.refresh();
   });
 
   // Refresh sessions for an agent (or all agents). Invalidates the cached
   // session-list state so the next expansion re-runs `session/list`.
-  const refreshSessionsCmd = vscode.commands.registerCommand('acp.refreshSessions', (arg?: any) => {
+  const refreshSessionsCmd = vscode.commands.registerCommand('auggie.refreshSessions', (arg?: any) => {
     const agentName = typeof arg === 'string' ? arg : arg?.agentName;
     sessionTreeProvider.invalidate(agentName);
   });
 
   // Open (load or resume) a previously-existing session.
-  const openSessionCmd = vscode.commands.registerCommand('acp.openSession', async (arg?: any) => {
+  const openSessionCmd = vscode.commands.registerCommand('auggie.openSession', async (arg?: any) => {
     const agentName: string | undefined = arg?.agentName;
     const sessionId: string | undefined = arg?.sessionId;
     if (!agentName || !sessionId) {
@@ -458,7 +458,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // No-op if it is already the active session.
     if (sessionManager.getActiveSessionId() === sessionId) {
-      vscode.commands.executeCommand('acp-chat.focus');
+      vscode.commands.executeCommand('auggie-chat.focus');
       return;
     }
 
@@ -473,7 +473,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
 
     try {
-      await vscode.commands.executeCommand('acp-chat.focus');
+      await vscode.commands.executeCommand('auggie-chat.focus');
       // Decide load vs resume based on capabilities. Prefer load (replays
       // history) for the richer experience.
       const caps = sessionManager.getCachedCapabilities(agentName);
@@ -503,13 +503,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
 
   // Pagination cursor: append the next page to the agent-sourced list.
-  const loadMoreSessionsCmd = vscode.commands.registerCommand('acp.loadMoreSessions', async (agentName?: string) => {
+  const loadMoreSessionsCmd = vscode.commands.registerCommand('auggie.loadMoreSessions', async (agentName?: string) => {
     if (!agentName) { return; }
     await sessionTreeProvider.loadMore(agentName);
   });
 
   // Copy session ID to clipboard (right-click on a session tree item).
-  const copySessionIdCmd = vscode.commands.registerCommand('acp.copySessionId', async (arg?: any) => {
+  const copySessionIdCmd = vscode.commands.registerCommand('auggie.copySessionId', async (arg?: any) => {
     const sessionId = arg?.sessionId;
     if (!sessionId) { return; }
     await vscode.env.clipboard.writeText(sessionId);
@@ -517,7 +517,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
 
   // Forget a single locally-cached session (right-click on a local session).
-  const forgetSessionCmd = vscode.commands.registerCommand('acp.forgetSession', async (arg?: any) => {
+  const forgetSessionCmd = vscode.commands.registerCommand('auggie.forgetSession', async (arg?: any) => {
     const agentName = arg?.agentName;
     const sessionId = arg?.sessionId;
     if (!agentName || !sessionId) { return; }
@@ -525,7 +525,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
 
   // Add Agent Configuration
-  const addAgentCmd = vscode.commands.registerCommand('acp.addAgent', async () => {
+  const addAgentCmd = vscode.commands.registerCommand('auggie.addAgent', async () => {
     const name = await vscode.window.showInputBox({
       prompt: 'Agent name',
       placeHolder: 'my-agent',
@@ -547,7 +547,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     });
     const args = argsStr ? argsStr.split(/\s+/) : [];
 
-    const config = vscode.workspace.getConfiguration('acp');
+    const config = vscode.workspace.getConfiguration('auggie');
     const agents: Record<string, any> = { ...(config.get<Record<string, any>>('agents') || {}) };
     agents[name] = { command, args };
     await config.update('agents', agents, vscode.ConfigurationTarget.Global);
@@ -557,8 +557,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
 
   // Remove Agent
-  const removeAgentCmd = vscode.commands.registerCommand('acp.removeAgent', async (item?: any) => {
-    const config = vscode.workspace.getConfiguration('acp');
+  const removeAgentCmd = vscode.commands.registerCommand('auggie.removeAgent', async (item?: any) => {
+    const config = vscode.workspace.getConfiguration('auggie');
     const agents: Record<string, any> = { ...(config.get<Record<string, any>>('agents') || {}) };
     const agentNames = Object.keys(agents);
     if (agentNames.length === 0) {
@@ -590,7 +590,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
 
   // Attach File
-  const attachFileCmd = vscode.commands.registerCommand('acp.attachFile', async () => {
+  const attachFileCmd = vscode.commands.registerCommand('auggie.attachFile', async () => {
     const uris = await vscode.window.showOpenDialog({
       canSelectMany: false,
       openLabel: 'Attach',
@@ -602,7 +602,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
 
   // Browse Registry
-  const browseRegistryCmd = vscode.commands.registerCommand('acp.browseRegistry', async () => {
+  const browseRegistryCmd = vscode.commands.registerCommand('auggie.browseRegistry', async () => {
     sendEvent('registry/browse');
     try {
       const agents = await fetchRegistry();

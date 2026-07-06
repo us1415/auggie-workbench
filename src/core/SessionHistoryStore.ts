@@ -34,7 +34,7 @@ interface PersistedShape {
   entries: PersistedSessionEntry[];
 }
 
-const STATE_KEY = 'acp.sessionHistory.v1';
+const STATE_KEY = 'auggie.sessionHistory.v1';
 const MAX_PROMPT_LEN = 120;
 const DEFAULT_CAP_PER_AGENT = 50;
 

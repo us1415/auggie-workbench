@@ -491,6 +491,12 @@ Packaging smoke on 2026-07-05:
   - Updated `src/test/extension.test.ts` to use `local.auggie-workbench` and cover Auggie-specific commands.
   - `cmd /c npm test` initially failed under restricted network while resolving VS Code test runtime, then passed with network permission: 3 tests passing.
   - TODO now explicitly prioritizes work-machine VSIX acceptance, test seams, terminal-routing regression checks, provider splitting, and checkpoint/revert scoping before more visual polish.
+- Work-machine install failure on 2026-07-06:
+  - User saw `No view is registered with id: acp-sessions` and no Auggie sidebar after installing the VSIX.
+  - Root cause: extension id was unique, but contributed view ids, command ids, and settings keys were still using the original `acp-*` / `acp.*` namespace, which can collide with the original ACP Client extension.
+  - Fix in progress: namespace visible contributions to `auggie-workbench`, `auggie-sessions`, `auggie-chat`, `auggie.*`, and `auggie.turnInProgress`.
+  - Settings moved from `acp.*` to `auggie.*` for true side-by-side behavior.
+  - Version bumped to `0.2.1` so the work machine can install a clear update VSIX.
 
 ## Known Issues / Watch Items
 
