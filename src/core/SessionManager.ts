@@ -153,6 +153,25 @@ export class SessionManager extends EventEmitter {
     ];
   }
 
+  private describeAgentStartupFailure(agentName: string, stderr: string, fallback: unknown): string {
+    const fallbackMessage = fallback instanceof Error ? fallback.message : String(fallback);
+
+    if (/EBADDEVENGINES|Invalid engine "runtime"|Invalid semver version/i.test(stderr)) {
+      const current = stderr.match(/current:\s*\{\s*name:\s*['"]node['"],\s*version:\s*['"]([^'"]+)['"]/i)?.[1];
+      const required = stderr.match(/required:\s*\{\s*name:\s*['"]node['"],\s*version:\s*['"]([^'"]+)['"]/i)?.[1]
+        ?? stderr.match(/Invalid semver version\s*["']([^"']+)["']/i)?.[1];
+      const currentText = current ? ` Current Node is ${current}.` : '';
+      const requiredText = required ? ` Required Node is ${required}.` : ' Required Node is the range reported by npm.';
+      return `${agentName} could not start because npm rejected the Node.js runtime.${currentText}${requiredText} Install/use a supported Node version for the Auggie launch command, then restart Auggie Workbench.`;
+    }
+
+    if (/command not found|not recognized as an internal or external command|ENOENT/i.test(stderr + '\n' + fallbackMessage)) {
+      return `${agentName} could not start because the configured launch command was not found. Check the Auggie Workbench setting \`auggie.agents\` and make sure the command is on PATH or uses an absolute executable path.`;
+    }
+
+    return `${fallbackMessage}${stderr ? `\n\nRecent ${agentName} stderr:\n${stderr}` : ''}`;
+  }
+
   /**
    * Connect to an agent and start chatting.
    * Only one agent can be connected at a time — automatically disconnects
@@ -227,8 +246,9 @@ export class SessionManager extends EventEmitter {
       try {
         connInfo = await this.connectionManager.connect(agentId, agentProcess.process);
       } catch (e) {
+        const stderr = this.agentManager.getStderrTail(agentId);
         this.agentManager.killAgent(agentId);
-        throw e;
+        throw new Error(this.describeAgentStartupFailure(agentName, stderr, e));
       }
 
       // Create ACP session (with auth handling). The session is already
@@ -713,8 +733,9 @@ export class SessionManager extends EventEmitter {
     try {
       connInfo = await this.connectionManager.connect(agentId, agentProcess.process);
     } catch (e) {
+      const stderr = this.agentManager.getStderrTail(agentId);
       this.agentManager.killAgent(agentId);
-      throw e;
+      throw new Error(this.describeAgentStartupFailure(agentName, stderr, e));
     }
 
     this.capabilities.set(agentName, this.summarizeCapabilities(connInfo.initResponse.agentCapabilities));

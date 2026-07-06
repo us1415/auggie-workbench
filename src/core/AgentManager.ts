@@ -70,6 +70,7 @@ export interface AgentInstance {
  */
 export class AgentManager extends EventEmitter {
   private agents: Map<string, AgentInstance> = new Map();
+  private stderrTail: Map<string, string[]> = new Map();
   private nextId = 1;
 
   /**
@@ -109,12 +110,16 @@ export class AgentManager extends EventEmitter {
 
     const instance: AgentInstance = { id, name, process: child, config };
     this.agents.set(id, instance);
+    this.stderrTail.set(id, []);
 
     // Forward stderr for debugging
     child.stderr?.on('data', (data: Buffer) => {
       const line = data.toString().trim();
       if (line) {
         log(`[${name} stderr] ${line}`);
+        const tail = this.stderrTail.get(id) ?? [];
+        tail.push(line);
+        this.stderrTail.set(id, tail.slice(-30));
         this.emit('agent-stderr', { agentId: id, line });
       }
     });
@@ -175,6 +180,10 @@ export class AgentManager extends EventEmitter {
     return Array.from(this.agents.values());
   }
 
+  getStderrTail(agentId: string): string {
+    return (this.stderrTail.get(agentId) ?? []).join('\n');
+  }
+
   /**
    * Kill all running agents. Called on extension deactivate.
    */
@@ -186,6 +195,7 @@ export class AgentManager extends EventEmitter {
 
   dispose(): void {
     this.killAll();
+    this.stderrTail.clear();
     this.removeAllListeners();
   }
 }

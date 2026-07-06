@@ -2,7 +2,7 @@
   "name": "auggie-workbench",
   "displayName": "Auggie Workbench",
   "description": "Auggie-powered VS Code sidebar over Agent Client Protocol, with a focused coding-agent workflow.",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "publisher": "local",
   "license": "MIT",
   "icon": "resources/icon.png",

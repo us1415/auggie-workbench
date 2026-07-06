@@ -4,6 +4,21 @@ All notable changes to Auggie Workbench are documented here.
 
 This project started from the open-source ACP Client for VS Code and is now being shaped into a focused Auggie CLI workbench. Older ACP Client release history is intentionally not repeated here because this branch is tracking the Auggie Workbench fork/package path.
 
+## [0.2.2] - 2026-07-06
+
+### Fixed
+
+- Added startup failure classification for Auggie/npm stderr so Node engine failures report a useful message instead of only `ACP connection closed`.
+- Captured recent agent stderr lines in the extension host for better connection-failure diagnostics.
+
+### Documentation
+
+- Documented correct custom Auggie binary configuration:
+  - direct binary path goes in `command`
+  - `--acp` stays in `args`
+  - `npx` should only be used with the package form `@augmentcode/auggie@latest`
+- Documented the work-machine failure where Auggie rejects Node `v24.4.0`; Auggie currently requires Node `>=22.14.0 <24`.
+
 ## [0.2.1] - 2026-07-06
 
 ### Fixed

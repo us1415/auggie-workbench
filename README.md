@@ -32,7 +32,7 @@ Work machines with locked-down network/proxy settings may need Node/npm/proxy co
 Install the packaged build from this repository:
 
 ```powershell
-code --install-extension auggie-workbench-0.2.1.vsix
+code --install-extension auggie-workbench-0.2.2.vsix
 ```
 
 Or in VS Code:
@@ -40,7 +40,7 @@ Or in VS Code:
 1. Open Extensions.
 2. Choose `...`.
 3. Select `Install from VSIX...`.
-4. Pick `auggie-workbench-0.2.1.vsix`.
+4. Pick `auggie-workbench-0.2.2.vsix`.
 5. Reload VS Code.
 
 The extension id is `local.auggie-workbench`, so it can be installed beside the original Augment extension without replacing it.
@@ -92,6 +92,41 @@ Common commands are available from the Command Palette:
 | `auggie.logTraffic` | `true` | Log ACP protocol traffic. |
 | `auggie.autoConnectAuggie` | `true` | Automatically connect when the Auggie sidebar activates. |
 
+### Custom Auggie Command
+
+If Auggie is installed as a local binary, put the binary path in `command` and keep `--acp` as an arg:
+
+```json
+{
+  "auggie.agents": {
+    "Auggie CLI": {
+      "command": "/opt/homebrew/bin/auggie",
+      "args": ["--acp"],
+      "env": {
+        "AUGMENT_DISABLE_AUTO_UPDATE": "1"
+      }
+    }
+  }
+}
+```
+
+Do not set `command` to `npx` and then pass the local Auggie binary path as the first arg. Use `npx` only for the package form:
+
+```json
+{
+  "auggie.agents": {
+    "Auggie CLI": {
+      "command": "npx",
+      "args": ["@augmentcode/auggie@latest", "--acp"]
+    }
+  }
+}
+```
+
+### Node Version
+
+Auggie currently rejects Node 24. Use Node `>=22.14.0 <24` for the launch command. If the log shows `EBADDEVENGINES` or `Invalid engine "runtime"`, switch the VS Code/Auggie launch environment to Node 22 or 23 and restart Auggie Workbench.
+
 ## Built-In Terminal MCP Tools
 
 Auggie Workbench automatically attaches a local MCP server named `auggie-vscode-terminal` to Auggie sessions. It exposes these equivalent tools:
@@ -116,7 +151,7 @@ Press `F5` in VS Code to launch the Extension Development Host.
 Package a VSIX:
 
 ```powershell
-cmd /c npx vsce package --out auggie-workbench-0.2.1.vsix
+cmd /c npx vsce package --out auggie-workbench-0.2.2.vsix
 ```
 
 ## Current Limitations

@@ -497,6 +497,14 @@ Packaging smoke on 2026-07-05:
   - Fix in progress: namespace visible contributions to `auggie-workbench`, `auggie-sessions`, `auggie-chat`, `auggie.*`, and `auggie.turnInProgress`.
   - Settings moved from `acp.*` to `auggie.*` for true side-by-side behavior.
   - Version bumped to `0.2.1` so the work machine can install a clear update VSIX.
+- Work-machine Auggie startup failure on 2026-07-06:
+  - User uploaded `Photos-work_machine_errors.zip`.
+  - Screenshot showed custom `auggie.agents` attempted `command: "npx"` with `args: ["/opt/homebrew/bin/auggie", "--acp"]`; for a direct binary, the binary path should be `command` and `--acp` should be the arg.
+  - Logs showed actual launch still used default `npx @augmentcode/auggie@latest --acp`.
+  - Real startup failure was npm `EBADDEVENGINES`: current Node `v24.4.0`, required Node `>=22.14.0 <24`.
+  - Added stderr-tail capture and startup-failure classification so this reports as a Node runtime problem instead of only `ACP connection closed`.
+  - Version bumped to `0.2.2` for the diagnostic/docs package.
+  - User then confirmed the work-machine install was able to run successfully after correcting the environment/config.
 
 ## Known Issues / Watch Items
 

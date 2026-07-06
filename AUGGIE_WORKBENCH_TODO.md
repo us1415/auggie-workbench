@@ -194,7 +194,9 @@ Public references:
 - [x] Run compile and lint.
 - [x] Package locally for a clean smoke test.
 - [x] Rebuild VSIX after README/package metadata cleanup.
-- [ ] Install packaged VSIX on the work machine and confirm it runs beside the original Augment extension without `acp-sessions` view registration errors.
+- [x] Install packaged VSIX on the work machine and confirm it runs beside the original Augment extension without `acp-sessions` view registration errors.
+- [x] On the work machine, confirm Auggie launches under Node `>=22.14.0 <24` rather than Node 24.
+- [x] On the work machine, retest custom `auggie.agents` direct-binary config with `command` set to the Auggie binary path and `args: ["--acp"]`.
 - [ ] Commit a stable baseline.
 
 ## 11. Hardening Before More Surface Area
@@ -203,6 +205,7 @@ Public references:
 - [x] Run `cmd /c npm test` and make the baseline extension tests pass for `local.auggie-workbench`.
 - [x] Namespace view/container/command ids away from `acp-*` / `acp.*` so the extension can coexist with the original ACP Client extension.
 - [x] Move Auggie Workbench contributed settings from `acp.*` to `auggie.*`.
+- [x] Add startup diagnostics for npm/Node engine failures instead of only surfacing `ACP connection closed`.
 - [ ] Add a small test seam for pure action-card parsing logic before more message rendering work.
 - [ ] Add a small test seam for changed-file snapshot parsing before more Edits/checkpoint work.
 - [ ] Add a local MCP helper test that verifies terminal tool aliases remain advertised.
