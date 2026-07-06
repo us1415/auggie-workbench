@@ -283,6 +283,135 @@ Use the direct-binary form when you already have `auggie` installed. Use the `np
 
 Auggie currently rejects Node 24. Use Node `>=22.14.0 <24` for the launch command. If the log shows `EBADDEVENGINES` or `Invalid engine "runtime"`, switch the VS Code/Auggie launch environment to Node 22 or 23 and restart Auggie Workbench.
 
+### MCP Servers
+
+Auggie Workbench always attaches its built-in visible-terminal MCP server. You can also attach your own MCP servers with `auggie.mcpServers`.
+
+Use Auggie-style object config when copying from Auggie docs or another Auggie setup:
+
+```json
+{
+  "auggie.mcpServers": {
+    "docs-search": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${workspaceFolder}/tools/docs-search-mcp.js"],
+      "env": {
+        "DOCS_ROOT": "${workspaceFolder}/docs"
+      }
+    }
+  }
+}
+```
+
+Use ACP-style array config if you already have that shape:
+
+```json
+{
+  "auggie.mcpServers": [
+    {
+      "name": "local-tools",
+      "type": "stdio",
+      "command": "node",
+      "args": ["${workspaceFolder}/tools/local-tools-mcp.js"],
+      "env": [
+        { "name": "PROJECT_ROOT", "value": "${workspaceFolder}" }
+      ]
+    }
+  ]
+}
+```
+
+HTTP/SSE MCP servers can be configured with `url` and optional headers:
+
+```json
+{
+  "auggie.mcpServers": {
+    "company-tools": {
+      "type": "http",
+      "url": "https://mcp.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer paste-token-here"
+      }
+    }
+  }
+}
+```
+
+To attach an MCP server only for the Auggie agent, put `mcpServers` inside that agent entry:
+
+```json
+{
+  "auggie.agents": {
+    "Auggie CLI": {
+      "command": "npx",
+      "args": ["@augmentcode/auggie@latest", "--acp"],
+      "mcpServers": {
+        "repo-tools": {
+          "type": "stdio",
+          "command": "node",
+          "args": ["${workspaceFolder}/tools/repo-tools-mcp.js"]
+        }
+      }
+    }
+  }
+}
+```
+
+`${workspaceFolder}` expands in MCP `command`, `args`, and `url`. Environment values are passed literally, so use absolute paths there if your MCP server needs them.
+
+### Working Directory
+
+By default, Auggie starts in the first workspace folder. In a monorepo, set `auggie.defaultWorkingDirectory` if Auggie should run from a subfolder:
+
+```json
+{
+  "auggie.defaultWorkingDirectory": "C:\\Users\\you\\Documents\\codebase\\my-repo\\apps\\web"
+}
+```
+
+macOS example:
+
+```json
+{
+  "auggie.defaultWorkingDirectory": "/Users/you/code/my-repo/apps/web"
+}
+```
+
+### Safety And Debug Toggles
+
+Keep permissions on `ask` unless you intentionally want Auggie actions to run without prompts:
+
+```json
+{
+  "auggie.autoApprovePermissions": "ask"
+}
+```
+
+Use `allowAll` only in workspaces where you are comfortable with the agent running approved actions without stopping to ask:
+
+```json
+{
+  "auggie.autoApprovePermissions": "allowAll"
+}
+```
+
+Turn on protocol traffic logs while debugging session, tool, or MCP behavior:
+
+```json
+{
+  "auggie.logTraffic": true
+}
+```
+
+Disable auto-connect if you want Auggie to start only when you run `Auggie: Start`:
+
+```json
+{
+  "auggie.autoConnectAuggie": false
+}
+```
+
 ## Built-In Terminal MCP Tools
 
 Auggie Workbench automatically attaches a local MCP server named `auggie-vscode-terminal` to Auggie sessions. It exposes these equivalent tools:

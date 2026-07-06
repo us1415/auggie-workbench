@@ -25,6 +25,14 @@ This project started from the open-source ACP Client for VS Code and is now bein
   - explicit Node 22/23 `npx.cmd` examples
   - explicit Homebrew, nvm, and asdf `npx` examples
   - guidance for Node managers and locked-down work environments
+- Added configuration examples for:
+  - global and per-agent `auggie.mcpServers`
+  - Auggie-style object MCP config and ACP-style array MCP config
+  - HTTP MCP servers with headers
+  - `auggie.defaultWorkingDirectory`
+  - `auggie.autoApprovePermissions`
+  - `auggie.logTraffic`
+  - `auggie.autoConnectAuggie`
 - Documented the work-machine failure where Auggie rejects Node `v24.4.0`; Auggie currently requires Node `>=22.14.0 <24`.
 
 ## [0.2.1] - 2026-07-06

@@ -513,6 +513,12 @@ Packaging smoke on 2026-07-05:
     - explicit Node 22/23 `npx.cmd` config.
     - explicit Homebrew, nvm, and asdf `npx` config examples.
     - Node-manager/work-machine guidance.
+  - Added README examples for other custom configuration:
+    - global and per-agent `auggie.mcpServers`.
+    - Auggie-style object MCP config and ACP-style array MCP config.
+    - HTTP MCP server with headers.
+    - `auggie.defaultWorkingDirectory`.
+    - `auggie.autoApprovePermissions`, `auggie.logTraffic`, and `auggie.autoConnectAuggie`.
 
 ## Known Issues / Watch Items
 
