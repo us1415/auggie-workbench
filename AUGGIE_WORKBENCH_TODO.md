@@ -7,6 +7,21 @@ Reference screenshots:
 Public references:
 - `https://github.com/augmentcode/auggie`
 
+## Current Checkpoint
+
+- Branch: `auggie-package-smoke`
+- Current install artifact: `auggie-workbench-0.2.2.vsix`
+- Latest pushed implementation checkpoint before this docs pass: `8decbcd Guard overlapping thread loads`
+- Work-machine status:
+  - VSIX installs beside the original extension after namespacing contributions/settings.
+  - Auggie starts when launched with supported Node `>=22.14.0 <24`.
+  - Natural visible-terminal requests work for `node --version` and `git status`.
+  - Older thread tree loads, but large history replay can be slow and needs better progress feedback.
+- Next priority:
+  - Retest older-thread rapid-click behavior with the `8decbcd` single-flight guard.
+  - Improve large-history loading feedback and reduce noisy replay logs.
+  - Add small tests/refactor seams before more visual polish.
+
 ## 1. Stabilize Current Build
 
 - [x] Remove temporary debug UI text from the webview.

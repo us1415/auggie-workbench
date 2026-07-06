@@ -17,14 +17,43 @@ Public reference note:
 ## Current State
 
 - Repo: `C:\Users\us141\Documents\codebase\vscode-acp`
+- Branch: `auggie-package-smoke`
+- Latest pushed checkpoint before this docs pass: `8decbcd Guard overlapping thread loads`
+- Current package artifact: `auggie-workbench-0.2.2.vsix`
 - Extension branding: Auggie Workbench / Auggie.
+- Extension id: `local.auggie-workbench`.
+- VS Code contribution namespace has been moved from `acp-*` / `acp.*` to `auggie-workbench`, `auggie-sessions`, `auggie-chat`, and `auggie.*` so it can install beside the original ACP Client/Augment-related extension.
 - Agent command: `npx @augmentcode/auggie@latest --acp`
+- User-configured command settings now live under `auggie.agents`.
+- Work-machine install/use is confirmed after correcting Node/config:
+  - Avoid Node 24 for Auggie; use Node `>=22.14.0 <24`.
+  - Direct Auggie binary config should use the binary path as `command` and `["--acp"]` as args.
+  - `npx` config should use package form: `["@augmentcode/auggie@latest", "--acp"]`.
 - Chat webview is loaded from `media/chatWebview.js`.
 - The external webview script fixed the previous VS Code `document.write` parse failure.
 - Latest Auggie conversation restores successfully on dev-host startup.
 - Auto-restore is silent and avoids the old double-load/cached-conversation flash.
 - Temporary debug text/log spam was removed.
 - `AUGGIE_WORKBENCH_TODO.md` tracks the feature checklist.
+
+## Compact Handoff
+
+- The hard problem is mostly solved: Auggie Workbench installs side-by-side, starts Auggie, shows Threads/Thread/Tasks/Edits, and routes natural terminal prompts through the visible VS Code terminal MCP bridge on the work machine.
+- Most recent user confirmations:
+  - Packaged VSIX installs beside the original extension after contribution ids/settings were namespaced.
+  - Work-machine Auggie startup works after using a supported Node/runtime config.
+  - Natural `Run node --version in the VS Code terminal.` works.
+  - Natural `run git status` uses `run_command_in_vscode_terminal_auggie-vscode-terminal` and runs in the visible terminal.
+  - Past-session tree is populated and older threads can be selected.
+- Most recent fix:
+  - `auggie.openSession` now has a single-flight guard to prevent overlapping older-thread loads and stacked `Loading session...` notifications.
+  - Rebuilt `auggie-workbench-0.2.2.vsix`; verified the VSIX contains only the expected 12 runtime files.
+- Important remaining risks:
+  - Large history replay can sit on `Loading conversation history...` for a noticeable time with weak progress feedback.
+  - Output logging is very noisy during replay and can make the UI feel busier/slower.
+  - Terminal routing remains a soft model/tool-selection contract, not a protocol guarantee; keep regression smoke tests.
+  - `ChatWebviewProvider.ts` is large and should be split before more UI surface area.
+  - Add test seams before more polish: action-card parsing, changed-file parsing, MCP helper alias list.
 
 ## Implemented So Far
 
@@ -550,39 +579,35 @@ Packaging smoke on 2026-07-05:
 
 ## Next Best Work
 
-0. Public Auggie repo/reference pass:
-   - Done for initial ACP/MCP/terminal architecture pass.
-   - Continue using public docs/repo first when new Auggie behavior questions come up.
-1. No current user smoke test for MCP plumbing:
-   - The latest `acp.mcpServers` change is infrastructure only.
-   - Do not ask the user to test it until a real MCP server is configured or a local terminal-runner server is added.
-2. Smoke test composer controls in Extension Development Host:
-   - `@`
-   - bottom `+`
-   - selected-code `I`
-   - `New`
-   - send prompt with chips attached
-3. Continue bigger functionality:
-   - convert tool-call rows into expandable reviewable action cards
-   - wire Edits to real file change detection, diff previews, and keep/discard actions
-   - wire Tasks to plan/task/tool progress if ACP exposes enough data
-   - make top header mode selector functional
-4. Terminal execution smoke test:
-   - Completed successfully for explicit prompt: `Use the run_command_in_vscode_terminal MCP tool to run node --version.`
-   - Alias/description ergonomics are implemented.
-   - Natural-prompt smoke test also completed: `Run node --version in the VS Code terminal.`
-   - Next terminal work is richer command/action cards, not basic connectivity.
-5. Activity cards:
-   - external/web action-card summaries still need a real tool payload to validate
-   - keep terminal selection/output as a later low-priority convenience
-6. Session tree:
-   - basic recent/open older/active marker flow passed in dev host
-6. Continue context-menu parity:
-   - make Files/Folders nested in-webview lists if feasible
-   - decide what Default Context and Rules should really include
-7. Improve message rendering and action-card polish.
-8. Package smoke test and confirm `media/chatWebview.js` is included.
-9. Install `auggie-workbench-0.2.0.vsix` in a clean VS Code profile or the work machine, then confirm the separate Auggie activity view appears alongside the original Augment extension.
+1. Work-machine retest after `8decbcd`:
+   - Install/reinstall `auggie-workbench-0.2.2.vsix`.
+   - Click an older thread, then quickly click another older thread.
+   - Expected: no stack of duplicate `Loading session...` notifications; second click should ask the user to wait.
+   - Confirm the loading overlay clears when replay completes.
+2. Improve large-history replay UX:
+   - Add progress detail if ACP exposes replay counts or infer a simple event counter.
+   - Consider a timeout/fallback message if history load is still active after a long delay.
+   - Reduce normal Output log noise from per-event `sessionUpdate` lines, or gate it behind debug logging.
+3. Hardening before more UI surface:
+   - Add a small test seam for action-card parsing.
+   - Add a small test seam for changed-file snapshot parsing.
+   - Add a local MCP helper test verifying terminal aliases are advertised.
+   - Add a regression smoke checklist for the terminal-routing contract after Auggie CLI updates.
+4. Split `ChatWebviewProvider.ts` before continuing slash-menu/message-polish work:
+   - changed-file/Git snapshot service
+   - task snapshot persistence helpers
+   - context picker/message handlers
+   - webview HTML/CSS assembly
+5. Deliberately scope checkpoints/revert before implementing:
+   - tracked vs untracked files
+   - binary files
+   - checkpoint storage
+   - restore/discard confirmation UX
+6. Lower-priority feature/polish:
+   - terminal output ANSI/OSC cleanup in action-card previews
+   - external/web action-card validation if Auggie exposes a web-style tool
+   - Add terminal selection/output to Auggie
+   - mode selector, indexing row, message styling, slash-menu polish
 
 ## User Workflow Notes
 
@@ -597,6 +622,9 @@ The user is not deep into VS Code extension workflow, so explain dev-host steps 
 
 - `Photos-3-001 (1).zip`
 - `Photos-3-001 (2).zip`
+- `Photos-work_machine_errors.zip`
+- `Photos-3-001 (4).zip`
+- `Photos-3-001 (5).zip`
 
 The second zip showed:
 
@@ -608,3 +636,9 @@ The second zip showed:
 - Ask/Agent style controls.
 - Tasks list view.
 - Edits changed-file view.
+
+Later screenshot zips showed:
+
+- `Photos-work_machine_errors.zip`: work-machine startup/config failures, including bad `npx` + direct binary config shape and Node 24 engine rejection.
+- `Photos-3-001 (4).zip`: past-session loading behavior, long `Loading conversation history...`, stacked `Loading session...` notifications, repeated MCP initialization, and `MaxListenersExceededWarning`.
+- `Photos-3-001 (5).zip`: work-machine natural terminal routing pass for `git status` through `run_command_in_vscode_terminal_auggie-vscode-terminal`.

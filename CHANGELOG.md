@@ -12,6 +12,15 @@ This project started from the open-source ACP Client for VS Code and is now bein
 - Captured recent agent stderr lines in the extension host for better connection-failure diagnostics.
 - Guarded older-thread loading so clicking multiple past sessions while one replay is still loading does not start overlapping loads or stack duplicate `Loading session...` notifications.
 
+### Verified
+
+- Work-machine install runs beside the original extension after namespacing.
+- Work-machine Auggie launch succeeds with supported Node/runtime configuration.
+- Natural terminal requests route through the visible-terminal MCP bridge:
+  - `Run node --version in the VS Code terminal.`
+  - `run git status`
+- Large older-thread replay works but can take a noticeable time; progress feedback remains a follow-up.
+
 ### Documentation
 
 - Documented correct custom Auggie binary configuration:
