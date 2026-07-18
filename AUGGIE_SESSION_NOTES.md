@@ -20,6 +20,7 @@ Public reference note:
 - Branch: `auggie-package-smoke`
 - Latest pushed checkpoint before this docs pass: `8decbcd Guard overlapping thread loads`
 - Current package artifact: `auggie-workbench-0.2.3.vsix`
+- GitHub repo: `https://github.com/us1415/auggie-workbench`
 - Extension branding: Auggie Workbench / Auggie.
 - Extension id: `local.auggie-workbench`.
 - VS Code contribution namespace has been moved from `acp-*` / `acp.*` to `auggie-workbench`, `auggie-sessions`, `auggie-chat`, and `auggie.*` so it can install beside the original ACP Client/Augment-related extension.
@@ -512,7 +513,7 @@ Packaging smoke on 2026-07-05:
 - Follow-up README/package metadata cleanup:
   - Replaced the upstream ACP Client README with an Auggie Workbench README.
   - README now documents side-by-side VSIX install, first terminal smoke test, Auggie commands/settings, built-in terminal MCP aliases, development commands, and current limitations.
-  - `package.json` repository, homepage, and bugs URLs now point to `https://github.com/us1415/vscode-acp`.
+  - `package.json` repository, homepage, and bugs URLs now point to `https://github.com/us1415/auggie-workbench`.
   - Rebuilt `auggie-workbench-0.2.0.vsix` so the package includes the updated README and metadata.
 - Changelog cleanup:
   - Replaced the upstream ACP Client release-history changelog with an Auggie Workbench changelog.

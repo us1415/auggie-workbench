@@ -112,7 +112,7 @@ This project started from the open-source ACP Client for VS Code and is now bein
 ### Changed
 
 - Reworked the original multi-agent ACP Client framing into an Auggie-first sidebar experience.
-- Updated package metadata links to `https://github.com/us1415/vscode-acp`.
+- Updated package metadata links to `https://github.com/us1415/auggie-workbench`.
 - Renamed user-facing commands and views from ACP Client language to Auggie language where practical.
 - Improved MCP server config handling:
   - accepts ACP-style arrays and Auggie-style objects keyed by server name
