@@ -32,7 +32,7 @@ Work machines with locked-down network/proxy settings may need Node/npm/proxy co
 Install the packaged build from this repository:
 
 ```powershell
-code --install-extension auggie-workbench-0.2.2.vsix
+code --install-extension auggie-workbench-0.2.3.vsix
 ```
 
 Or in VS Code:
@@ -40,7 +40,7 @@ Or in VS Code:
 1. Open Extensions.
 2. Choose `...`.
 3. Select `Install from VSIX...`.
-4. Pick `auggie-workbench-0.2.2.vsix`.
+4. Pick `auggie-workbench-0.2.3.vsix`.
 5. Reload VS Code.
 
 The extension id is `local.auggie-workbench`, so it can be installed beside the original Augment extension without replacing it.
@@ -436,7 +436,7 @@ Press `F5` in VS Code to launch the Extension Development Host.
 Package a VSIX:
 
 ```powershell
-cmd /c npx vsce package --out auggie-workbench-0.2.2.vsix
+cmd /c npx vsce package --out auggie-workbench-0.2.3.vsix
 ```
 
 ## Current Limitations

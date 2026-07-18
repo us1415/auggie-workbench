@@ -19,7 +19,7 @@ Public reference note:
 - Repo: `C:\Users\us141\Documents\codebase\vscode-acp`
 - Branch: `auggie-package-smoke`
 - Latest pushed checkpoint before this docs pass: `8decbcd Guard overlapping thread loads`
-- Current package artifact: `auggie-workbench-0.2.2.vsix`
+- Current package artifact: `auggie-workbench-0.2.3.vsix`
 - Extension branding: Auggie Workbench / Auggie.
 - Extension id: `local.auggie-workbench`.
 - VS Code contribution namespace has been moved from `acp-*` / `acp.*` to `auggie-workbench`, `auggie-sessions`, `auggie-chat`, and `auggie.*` so it can install beside the original ACP Client/Augment-related extension.
@@ -40,14 +40,17 @@ Public reference note:
 
 - The hard problem is mostly solved: Auggie Workbench installs side-by-side, starts Auggie, shows Threads/Thread/Tasks/Edits, and routes natural terminal prompts through the visible VS Code terminal MCP bridge on the work machine.
 - Most recent user confirmations:
+  - Packaged VSIX installed and tested successfully on the work machine.
   - Packaged VSIX installs beside the original extension after contribution ids/settings were namespaced.
   - Work-machine Auggie startup works after using a supported Node/runtime config.
   - Natural `Run node --version in the VS Code terminal.` works.
   - Natural `run git status` uses `run_command_in_vscode_terminal_auggie-vscode-terminal` and runs in the visible terminal.
   - Past-session tree is populated and older threads can be selected.
+  - Composer interrupt/steering behavior works in the dev host: typing a follow-up during an active turn cancels the running command sequence and sends the steering message.
 - Most recent fix:
+  - Composer interrupt/steering fix: the input remains editable while Auggie is working. Sending a non-empty draft during an active turn queues it, cancels the current turn, and automatically sends the queued message after the current prompt settles.
   - `auggie.openSession` now has a single-flight guard to prevent overlapping older-thread loads and stacked `Loading session...` notifications.
-  - Rebuilt `auggie-workbench-0.2.2.vsix`; verified the VSIX contains only the expected 12 runtime files.
+  - Version bumped to `0.2.3` and packaged as `auggie-workbench-0.2.3.vsix` for the composer interrupt/steering package.
 - Important remaining risks:
   - Large history replay can sit on `Loading conversation history...` for a noticeable time with weak progress feedback.
   - Output logging is very noisy during replay and can make the UI feel busier/slower.
@@ -562,10 +565,18 @@ Packaging smoke on 2026-07-05:
   - Natural `run git status` request used `run_command_in_vscode_terminal_auggie-vscode-terminal`.
   - The command ran in the visible VS Code terminal and returned a clean working tree.
   - Auggie also answered that it should prefer `auggie-vscode-terminal` tools for terminal commands; treat this as a good conversational signal, not a permanent protocol guarantee.
+- Work-machine composer interrupt bug report on 2026-07-18:
+  - User reported that while Auggie is actively working, the composer could not be clicked or typed into, so steering required manually pressing Stop first.
+  - Root cause: `media/chatWebview.js` disabled the textarea during `setProcessing(true)`, and Enter/click while processing always mapped to Stop.
+  - Fix implemented locally: keep the textarea enabled during active responses; if the composer is blank, the button remains Stop; once text is typed, the button changes to Interrupt and posts the new prompt.
+  - `ChatWebviewProvider` now serializes this as cancel-then-send: a prompt submitted during an active turn is queued, the current turn is cancelled, and the queued prompt is sent after the active prompt settles.
+  - User verified in the dev host: after asking for recent repo history, they typed `can you summarize it?` during the active turn; Auggie cancelled the running command sequence and answered the steering prompt.
+  - Version bumped to `0.2.3` and rebuilt as `auggie-workbench-0.2.3.vsix`.
 
 ## Known Issues / Watch Items
 
 - Need user smoke test after each F5 dev-host restart.
+- Composer interrupt/steering fix passed dev-host smoke testing; package it with a new version number before work-machine install.
 - Confirm reload/reopen restores latest conversation without pressing Start.
 - Confirm loading overlay always clears after history replay.
 - Confirm `media/chatWebview.js` is included in packaged extension.
@@ -580,7 +591,7 @@ Packaging smoke on 2026-07-05:
 ## Next Best Work
 
 1. Work-machine retest after `8decbcd`:
-   - Install/reinstall `auggie-workbench-0.2.2.vsix`.
+   - Install/reinstall `auggie-workbench-0.2.3.vsix`.
    - Click an older thread, then quickly click another older thread.
    - Expected: no stack of duplicate `Loading session...` notifications; second click should ask the user to wait.
    - Confirm the loading overlay clears when replay completes.

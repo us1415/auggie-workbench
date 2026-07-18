@@ -45,6 +45,8 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
   private readonly changedFilesWatchDisposables: vscode.Disposable[] = [];
   private readonly diffBaseContents = new Map<string, string>();
   private readonly diffBaseContentProviderDisposable: vscode.Disposable;
+  private promptInProgress = false;
+  private queuedPromptAfterCancel?: string;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -277,6 +279,16 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
+    if (this.promptInProgress) {
+      this.queuedPromptAfterCancel = text;
+      this.postMessage({
+        type: 'status',
+        message: 'Interrupting current turn...',
+      });
+      await this.handleCancelTurn();
+      return;
+    }
+
     sendEvent('chat/messageSent', {
       agentName: this.sessionManager.getActiveAgentName() ?? '',
     }, {
@@ -288,6 +300,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     this.sessionManager.recordFirstPrompt(activeId, text);
 
     // Tell webview we're processing
+    this.promptInProgress = true;
     this.postMessage({ type: 'promptStart' });
 
     try {
@@ -308,6 +321,13 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
         message: e.message || 'Prompt failed',
       });
       this.postMessage({ type: 'promptEnd', stopReason: 'error' });
+    } finally {
+      this.promptInProgress = false;
+      const queuedPrompt = this.queuedPromptAfterCancel;
+      this.queuedPromptAfterCancel = undefined;
+      if (queuedPrompt) {
+        void this.handleSendPrompt(queuedPrompt);
+      }
     }
   }
 

@@ -4,6 +4,17 @@ All notable changes to Auggie Workbench are documented here.
 
 This project started from the open-source ACP Client for VS Code and is now being shaped into a focused Auggie CLI workbench. Older ACP Client release history is intentionally not repeated here because this branch is tracking the Auggie Workbench fork/package path.
 
+## [0.2.3] - 2026-07-18
+
+### Fixed
+
+- Kept the composer editable while Auggie is working so the user can steer an active task without manually stopping first.
+- Added interrupt-and-send behavior: submitting a non-empty draft during an active turn cancels the current turn and sends the steering message once the active prompt settles.
+
+### Verified
+
+- Dev-host smoke test confirmed a follow-up message can be entered during an active turn and is sent after the running command sequence is cancelled.
+
 ## [0.2.2] - 2026-07-06
 
 ### Fixed

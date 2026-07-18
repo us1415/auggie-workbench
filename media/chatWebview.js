@@ -597,6 +597,7 @@
 
     // --- Auto-resize textarea (within the input area constraints) ---
     if (promptInput) promptInput.addEventListener('input', () => {
+      refreshSendStopButton();
       // Slash command autocomplete
       const text = promptInput.value;
       if (text.startsWith('/') && availableCommands.length > 0) {
@@ -667,7 +668,7 @@
 
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        if (isProcessing) {
+        if (isProcessing && !promptInput.value.trim()) {
           handleCancel();
         } else {
           handleSend();
@@ -677,10 +678,11 @@
 
     function handleSend() {
       const text = promptInput.value.trim();
-      if (!text || isProcessing) return;
+      if (!text) return;
 
       addMessage('user', text);
       promptInput.value = '';
+      refreshSendStopButton();
       vscode.postMessage({ type: 'sendPrompt', text: buildPromptWithContext(text) });
     }
 
@@ -849,7 +851,7 @@
 
     // Wire up buttons
     if (sendStopBtn) sendStopBtn.addEventListener('click', () => {
-      if (isProcessing) {
+      if (isProcessing && !promptInput.value.trim()) {
         handleCancel();
       } else {
         handleSend();
@@ -912,23 +914,36 @@
     }
 
     // --- Send/Stop toggle ---
-    function setProcessing(processing) {
-      isProcessing = processing;
-      if (processing) {
+    function refreshSendStopButton() {
+      if (!sendStopBtn) return;
+      if (isProcessing) {
+        const hasDraft = !!(promptInput && promptInput.value.trim());
         sendStopBtn.className = 'send-stop-btn stop';
-        sendStopBtn.textContent = 'Stop';
+        sendStopBtn.textContent = hasDraft ? 'Interrupt' : 'Stop';
+        sendStopBtn.title = hasDraft
+          ? 'Cancel the current turn and send this message'
+          : 'Stop the current turn';
         sendStopBtn.disabled = false;
-        promptInput.disabled = true;
-        if (statusEl) statusEl.textContent = '';
-        showWorkingIndicator('Auggie is working...');
       } else {
         sendStopBtn.className = 'send-stop-btn send';
         sendStopBtn.textContent = 'Send';
+        sendStopBtn.title = 'Send message';
         sendStopBtn.disabled = false;
+      }
+    }
+
+    function setProcessing(processing) {
+      isProcessing = processing;
+      if (processing) {
+        promptInput.disabled = false;
+        if (statusEl) statusEl.textContent = '';
+        showWorkingIndicator('Auggie is working...');
+      } else {
         promptInput.disabled = false;
         if (statusEl) statusEl.textContent = '';
         hideWorkingIndicator();
       }
+      refreshSendStopButton();
     }
 
     function formatElapsed(ms) {
@@ -2324,6 +2339,10 @@
 
         case 'error':
           addMessage('error', msg.message || 'An error occurred');
+          break;
+
+        case 'status':
+          showComposerNotice(msg.message || '');
           break;
 
         case 'sessionUpdate':

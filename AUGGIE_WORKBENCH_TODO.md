@@ -10,14 +10,17 @@ Public references:
 ## Current Checkpoint
 
 - Branch: `auggie-package-smoke`
-- Current install artifact: `auggie-workbench-0.2.2.vsix`
-- Latest pushed implementation checkpoint before this docs pass: `8decbcd Guard overlapping thread loads`
+- Current install artifact: `auggie-workbench-0.2.3.vsix`
+- Latest implementation checkpoint: composer interrupt/steering fix packaged as `0.2.3`.
 - Work-machine status:
   - VSIX installs beside the original extension after namespacing contributions/settings.
   - Auggie starts when launched with supported Node `>=22.14.0 <24`.
   - Natural visible-terminal requests work for `node --version` and `git status`.
+  - Packaged install tested successfully on the work machine.
+  - Composer interrupt/steering behavior works in the dev host.
   - Older thread tree loads, but large history replay can be slow and needs better progress feedback.
 - Next priority:
+  - Commit, push, and merge the `0.2.3` interrupt/steering baseline.
   - Retest older-thread rapid-click behavior with the `8decbcd` single-flight guard.
   - Improve large-history loading feedback and reduce noisy replay logs.
   - Add small tests/refactor seams before more visual polish.
@@ -74,7 +77,10 @@ Public references:
 - [x] Improve Auto toggle with tooltip and mode state.
 - [x] Improve Prompt Enhancer button/tooltip.
 - [x] Clean up model picker label and styling.
-- [ ] Verify send/stop behavior during active responses.
+- [x] Smoke test interrupt/steer behavior during active responses:
+  - Composer remains editable while Auggie is working.
+  - Blank composer keeps Stop behavior.
+  - Typed text changes Stop to Interrupt and sends after cancelling the current turn.
 
 ## 5. Slash Commands And Menus
 
