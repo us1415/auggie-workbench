@@ -17,7 +17,7 @@ Public reference note:
 ## Current State
 
 - Repo: `C:\Users\us141\Documents\codebase\vscode-acp`
-- Branch: `main` (all work merged to `main`; latest pushed `5effca1`, see Session Log 2026-07-19)
+- Branch: `main` (all work merged to `main`; see the Session Log for the latest pushed commit)
 - Current package artifact: `auggie-workbench-0.2.3.vsix`
 - GitHub repo: `https://github.com/us1415/auggie-workbench`
 - Extension branding: Auggie Workbench / Auggie.

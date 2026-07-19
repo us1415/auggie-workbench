@@ -9,8 +9,8 @@ Public references:
 
 ## Current Checkpoint
 
-- Branch: `auggie-package-smoke`
-- Current install artifact: `auggie-workbench-0.2.3.vsix`
+- Branch: `main` (0.2.3 baseline merged; 2026-07-19 hardening pass pushed — see `AUGGIE_SESSION_NOTES.md` Session Log)
+- Current install artifact: `auggie-workbench-0.2.3.vsix` (not re-packaged in the 2026-07-19 pass)
 - Latest implementation checkpoint: composer interrupt/steering fix packaged as `0.2.3`.
 - Work-machine status:
   - VSIX installs beside the original extension after namespacing contributions/settings.
@@ -20,7 +20,7 @@ Public references:
   - Composer interrupt/steering behavior works in the dev host.
   - Older thread tree loads, but large history replay can be slow and needs better progress feedback.
 - Next priority:
-  - Commit, push, and merge the `0.2.3` interrupt/steering baseline.
+  - Build the turn-scoped duplicate-command guard: Auggie can emit the same command twice in one turn; suppress within-turn duplicate identical commands and reset the scope on any new user message so "check it again" still re-runs.
   - Retest older-thread rapid-click behavior with the `8decbcd` single-flight guard.
   - Improve large-history loading feedback and reduce noisy replay logs.
   - Add small tests/refactor seams before more visual polish.
@@ -108,7 +108,7 @@ Public references:
 - [x] Render external integration calls with URL/method/preview rows when ACP/MCP payloads expose them.
 - [x] Render terminal command cards with command text, output preview, and completion status.
 - [x] Add terminal MCP bridge side-channel for command/output details when Auggie ACP tool payloads only say `other`.
-- [ ] Filter ANSI/OSC/shell-control sequences from terminal card output previews.
+- [x] Filter ANSI/OSC/shell-control sequences from terminal card output previews. (2026-07-19, `931091f`)
 - [x] Render file read/search cards with file/path/query/result summaries when ACP/MCP payloads expose them.
 - [x] Add title fallback parsing for read/search cards when Auggie only exposes path/query text in the card title.
 - [x] Treat `Run ...` / `Execute ...` tool titles as command cards when Auggie search work arrives through execute tools.
@@ -200,6 +200,9 @@ Public references:
 - [x] Work-machine smoke test: natural `run git status` request used `run_command_in_vscode_terminal_auggie-vscode-terminal` and ran in the visible VS Code terminal.
 - [x] Add richer terminal command cards that parse common ACP/MCP command payload fields and the local visible-terminal MCP summary text.
 - [x] Smoke test richer terminal command cards in the Extension Development Host.
+- [x] Make the hidden-terminal fallback loud instead of silent: one-time warning toast, per-command banner, and `Auggie (hidden):` tab name; shell-integration wait bumped 3s -> 8s. (2026-07-19, `f3c78d3`)
+- [x] Ship `rules/visible-terminal.md` and inject it via `--rules` at spawn so Auggie defaults to the visible terminal and STOPS/ASKS instead of falling back to invisible `launch-process`. (2026-07-19, `bca0f37`)
+- [ ] Turn-scoped duplicate-command guard: suppress a duplicate identical command within one agent turn; reset on any new user message. Needs turn-awareness from the ACP session layer. (designed, not built)
 - [ ] Low priority: add "Add terminal selection/output to Auggie" command and terminal context menu entry.
 - [ ] Low priority: attach selected terminal text to the next prompt as context.
 
@@ -223,7 +226,7 @@ Public references:
 - [x] On the work machine, retest custom `auggie.agents` direct-binary config with `command` set to the Auggie binary path and `args: ["--acp"]`.
 - [x] Document work-machine custom Node/Auggie command configuration, including explicit Windows/macOS `auggie` and `npx` paths.
 - [x] Document other custom options: MCP servers, default working directory, permission policy, traffic logging, and auto-connect.
-- [ ] Commit a stable baseline.
+- [x] Commit a stable baseline. (all work on `main`)
 
 ## 11. Hardening Before More Surface Area
 
@@ -234,7 +237,7 @@ Public references:
 - [x] Add startup diagnostics for npm/Node engine failures instead of only surfacing `ACP connection closed`.
 - [ ] Add a small test seam for pure action-card parsing logic before more message rendering work.
 - [ ] Add a small test seam for changed-file snapshot parsing before more Edits/checkpoint work.
-- [ ] Add a local MCP helper test that verifies terminal tool aliases remain advertised.
+- [x] Add a local MCP helper test that verifies terminal tool aliases remain advertised. (2026-07-19, `6a76254`)
 - [ ] Add a regression smoke checklist for the soft terminal-routing contract after Auggie CLI updates.
 - [ ] Split `ChatWebviewProvider.ts` before sections 5, 6, and 9 grow further:
   - changed-file/Git snapshot service
