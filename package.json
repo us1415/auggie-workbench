@@ -45,12 +45,14 @@
         {
           "id": "auggie-sessions",
           "name": "Threads",
-          "type": "tree"
+          "type": "tree",
+          "icon": "resources/icon.svg"
         },
         {
           "id": "auggie-chat",
           "name": "Auggie",
-          "type": "webview"
+          "type": "webview",
+          "icon": "resources/icon.svg"
         }
       ]
     },
