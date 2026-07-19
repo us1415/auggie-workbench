@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { log, logError } from '../utils/Logger';
+import { sanitizeTerminalOutput } from '../utils/terminalOutput';
 
 import type {
   CreateTerminalRequest,
@@ -117,7 +118,9 @@ export class TerminalHandler {
     }
 
     return {
-      output: output.output,
+      // Strip terminal control sequences (shell-integration OSC markers, color
+      // codes) so command output renders cleanly in the chat action cards.
+      output: sanitizeTerminalOutput(output.output),
       truncated: output.truncated,
       exitCode: output.exitStatus?.exitCode ?? null,
       signal: output.exitStatus?.signal ?? null,
