@@ -298,11 +298,26 @@ async function handleMessage(message) {
   }
 }
 
-process.stdin.on('data', (chunk) => {
-  inputBuffer = Buffer.concat([inputBuffer, chunk]);
-  drainMessages();
-});
+// Only start the stdio server when run directly (node auggie-terminal-mcp.js).
+// When required from a test, skip this so the module can be inspected without
+// hijacking stdin.
+if (require.main === module) {
+  process.stdin.on('data', (chunk) => {
+    inputBuffer = Buffer.concat([inputBuffer, chunk]);
+    drainMessages();
+  });
 
-process.stdin.on('error', (error) => {
-  console.error(error?.stack || String(error));
-});
+  process.stdin.on('error', (error) => {
+    console.error(error?.stack || String(error));
+  });
+}
+
+// Exposed for tests. The advertised tool table (toolDefinitions) and the
+// callable set (toolNames) must stay in sync, and every alias must forward to
+// the visible VS Code terminal.
+module.exports = {
+  toolDefinitions,
+  toolNames,
+  toolDefinition,
+  commandInputSchema,
+};
