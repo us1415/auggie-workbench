@@ -56,6 +56,15 @@ export interface VisibleCommandResult {
 export class TerminalHandler {
   private terminals: Map<string, ManagedTerminal> = new Map();
   private nextId = 1;
+  private shellIntegrationWarningShown = false;
+
+  /**
+   * Max time to wait for VS Code shell integration before falling back to a
+   * hidden spawn. Bumped from 3s: a cold shell can take several seconds to
+   * report integration, and the fallback silently loses Ctrl+C and shell
+   * history (the whole point of using the visible terminal).
+   */
+  private static readonly SHELL_INTEGRATION_TIMEOUT_MS = 8000;
 
   async createTerminal(params: CreateTerminalRequest): Promise<CreateTerminalResponse> {
     const terminalId = `term_${this.nextId++}`;
@@ -80,7 +89,33 @@ export class TerminalHandler {
       return { terminalId };
     }
 
+    this.warnInvisibleFallback(params);
     return this.createSpawnTerminal(terminalId, params, env, outputByteLimit);
+  }
+
+  /**
+   * Loudly surface the degraded "hidden process" mode. Without shell
+   * integration a command runs in a child process mirrored to a display-only
+   * terminal: output is visible, but Ctrl+C will not stop it and it never
+   * reaches shell history. Warn once per session (toast) so the user is never
+   * silently in this mode; a per-command banner in createSpawnTerminal marks
+   * each individual run.
+   */
+  private warnInvisibleFallback(params: CreateTerminalRequest): void {
+    logError(
+      `createTerminal: running "${params.command}" WITHOUT shell integration ` +
+      `(hidden process - Ctrl+C and shell history unavailable)`,
+    );
+    if (this.shellIntegrationWarningShown) {
+      return;
+    }
+    this.shellIntegrationWarningShown = true;
+    void vscode.window.showWarningMessage(
+      'Auggie could not use VS Code shell integration, so commands are running in ' +
+      'a hidden process: you can see the output, but Ctrl+C will not stop them and ' +
+      'they will not appear in your shell history. Enable terminal shell ' +
+      'integration to restore visible, interruptible commands.',
+    );
   }
 
   async runVisibleCommand(params: VisibleCommandRequest): Promise<VisibleCommandResult> {
@@ -181,7 +216,7 @@ export class TerminalHandler {
     });
     vsTerminal.show(true);
 
-    const shellIntegration = await this.waitForShellIntegration(vsTerminal, 3000);
+    const shellIntegration = await this.waitForShellIntegration(vsTerminal, TerminalHandler.SHELL_INTEGRATION_TIMEOUT_MS);
     if (!shellIntegration) {
       vsTerminal.dispose();
       log(`createTerminal: shell integration unavailable, falling back to spawn terminal (id=${terminalId})`);
@@ -302,12 +337,20 @@ export class TerminalHandler {
     const pty: vscode.Pseudoterminal = {
       onDidWrite: writeEmitter.event,
       open() {
+        // Bright banner so a hidden-process run is never mistaken for a real,
+        // interruptible terminal. Display-only: not part of the captured output
+        // that feeds the chat action card.
+        writeEmitter.fire(
+          '\x1b[33m[!] Auggie shell integration unavailable - this command ' +
+          'is running in a hidden process. Ctrl+C here will NOT stop it, and it ' +
+          'will not appear in your shell history.\x1b[0m\r\n',
+        );
         writeEmitter.fire(`$ ${params.command} ${(params.args || []).join(' ')}\r\n`);
       },
       close() { /* no-op */ },
     };
     const vsTerminal = vscode.window.createTerminal({
-      name: `ACP: ${params.command}`,
+      name: `Auggie (hidden): ${params.command}`,
       pty,
     });
 
@@ -425,7 +468,7 @@ export class TerminalHandler {
       }
     }
 
-    // Don't dispose VS Code terminal — keep output visible per ACP spec
+    // Don't dispose VS Code terminal - keep output visible per ACP spec
     this.terminals.delete(params.terminalId);
 
     return {};
