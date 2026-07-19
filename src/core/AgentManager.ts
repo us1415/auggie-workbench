@@ -4,6 +4,7 @@ import { EventEmitter } from 'node:events';
 import { log, logError } from '../utils/Logger';
 import { sendEvent, sendError } from '../utils/TelemetryManager';
 import type { AgentConfigEntry } from '../config/AgentConfig';
+import { withAuggieRules } from '../utils/agentRules';
 
 /**
  * Escape a single argument for safe inclusion in a shell command string.
@@ -74,19 +75,32 @@ export class AgentManager extends EventEmitter {
   private nextId = 1;
 
   /**
+   * @param auggieRulesPath Absolute path to a bundled rules `.md` file. When set
+   *   and present on disk, it is passed to Auggie agents via `--rules` so they
+   *   always load the visible-terminal rule. Ignored for non-Auggie agents.
+   */
+  constructor(private readonly auggieRulesPath?: string) {
+    super();
+  }
+
+  /**
    * Spawn an agent as a child process with stdin/stdout piped.
    */
   spawnAgent(name: string, config: AgentConfigEntry, cwd?: string): AgentInstance {
     const id = `agent_${this.nextId++}`;
-    log(`Spawning agent "${name}" (${id}): ${config.command} ${(config.args || []).join(' ')}`);
+    const rulesPath = this.auggieRulesPath && existsSync(this.auggieRulesPath)
+      ? this.auggieRulesPath
+      : undefined;
+    const effectiveConfig = withAuggieRules(config, rulesPath);
+    log(`Spawning agent "${name}" (${id}): ${effectiveConfig.command} ${(effectiveConfig.args || []).join(' ')}`);
 
     const child = (() => {
       if (process.platform === 'win32') {
         // On Windows, commands like npx are batch scripts (.cmd) that require
         // shell resolution via cmd.exe.
-        return spawn(config.command, config.args || [], {
+        return spawn(effectiveConfig.command, effectiveConfig.args || [], {
           stdio: ['pipe', 'pipe', 'pipe'],
-          env: { ...process.env, ...(config.env || {}) },
+          env: { ...process.env, ...(effectiveConfig.env || {}) },
           cwd: cwd || undefined,
           shell: true,
         });
@@ -95,7 +109,7 @@ export class AgentManager extends EventEmitter {
       // On macOS/Linux, use the user's login shell so that PATH includes
       // nvm, Homebrew, and other user-installed tool directories.
       const { shell, useLoginFlag } = resolveUnixShell();
-      const commandStr = [config.command, ...(config.args || [])].map(shellEscape).join(' ');
+      const commandStr = [effectiveConfig.command, ...(effectiveConfig.args || [])].map(shellEscape).join(' ');
       const shellArgs = useLoginFlag ? ['-l', '-c', commandStr] : ['-c', commandStr];
 
       log(`Using shell: ${shell} ${shellArgs.join(' ')}`);
@@ -103,12 +117,12 @@ export class AgentManager extends EventEmitter {
       sendEvent('agent/spawn/shell', { shell: shellName, useLoginFlag: String(useLoginFlag) });
       return spawn(shell, shellArgs, {
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: { ...process.env, ...(config.env || {}) },
+        env: { ...process.env, ...(effectiveConfig.env || {}) },
         cwd: cwd || undefined,
       });
     })();
 
-    const instance: AgentInstance = { id, name, process: child, config };
+    const instance: AgentInstance = { id, name, process: child, config: effectiveConfig };
     this.agents.set(id, instance);
     this.stderrTail.set(id, []);
 

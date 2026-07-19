@@ -39,7 +39,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // --- Core services ---
   const sessionUpdateHandler = new SessionUpdateHandler();
-  const agentManager = new AgentManager();
+  // Ship a rule that steers Auggie to run commands in the visible VS Code
+  // terminal; passed to Auggie agents via `--rules` at spawn time.
+  const auggieRulesPath = vscode.Uri.joinPath(context.extensionUri, 'rules', 'visible-terminal.md').fsPath;
+  const agentManager = new AgentManager(auggieRulesPath);
   const connectionManager = new ConnectionManager(sessionUpdateHandler);
   const sessionManager = new SessionManager(
     agentManager,
