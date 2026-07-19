@@ -17,8 +17,7 @@ Public reference note:
 ## Current State
 
 - Repo: `C:\Users\us141\Documents\codebase\vscode-acp`
-- Branch: `auggie-package-smoke`
-- Latest pushed checkpoint before this docs pass: `8decbcd Guard overlapping thread loads`
+- Branch: `main` (all work merged to `main`; latest pushed `5effca1`, see Session Log 2026-07-19)
 - Current package artifact: `auggie-workbench-0.2.3.vsix`
 - GitHub repo: `https://github.com/us1415/auggie-workbench`
 - Extension branding: Auggie Workbench / Auggie.
@@ -58,6 +57,24 @@ Public reference note:
   - Terminal routing remains a soft model/tool-selection contract, not a protocol guarantee; keep regression smoke tests.
   - `ChatWebviewProvider.ts` is large and should be split before more UI surface area.
   - Add test seams before more polish: action-card parsing, changed-file parsing, MCP helper alias list.
+
+## Session Log
+
+### 2026-07-19 (Claude Code)
+
+Driven from Claude Code (Joel's primary build agent). Everything below is committed + pushed to `main` on `us1415/auggie-workbench` and F5 dev-host verified, not just gate-verified. Test suite went 12 -> 21 passing.
+
+- **Editor stability (`7a04993`):** committed `.vscode/settings.json` `js/ts.tsdk.path` so the editor uses the workspace TypeScript (5.9.3). Fixes a recurring "cannot find Buffer/process/suite" cascade caused by VS Code's bundled TS 6.0.3 treating the `node10` tsconfig as a hard error. (Attempting to modernize `moduleResolution` was abandoned — it forces an ESM migration because the ACP SDK is ESM-only.)
+- **Manifest (`07b0af7`):** added `icon` to the Threads/Auggie views to clear "Missing property icon" warnings.
+- **Terminal output sanitizer (`931091f`):** strip ANSI/OSC (incl. shell-integration OSC 633) from captured output so action-card previews are clean; normalize CRLF/lone-CR. + unit tests. [closes "ANSI/OSC cleanup", Next Best Work #6]
+- **Hidden-fallback no longer silent (`f3c78d3`):** one-time warning toast + per-command banner + tab renamed `ACP:` -> `Auggie (hidden):`; shell-integration wait bumped 3s -> 8s.
+- **Terminal MCP alias tests (`6a76254`):** made the helper importable (guard the stdio loop behind `require.main === module`) and added tests asserting all visible-terminal aliases are advertised and match the callable dispatch set. [closes MCP-helper test seam, Next Best Work #3]
+- **Visible terminal by default (`bca0f37`):** ship `rules/visible-terminal.md` and inject it via `--rules` at spawn time so agent-initiated commands default to the visible terminal. The rule uses a STOP-AND-ASK stance (Joel's explicit ask): if no visible-terminal tool is available it must NOT fall back to invisible `launch-process` — it stops and asks. Injection scoped to Auggie agents, respects a user `--rules`, no-ops if the file is missing. + unit tests. Verified live: `TERM_PROGRAM=[vscode]` + `Auggie:` tab, Auggie chose the visible terminal unprompted.
+- **Docs (`5effca1`):** `AUGGIE_RULES_SETUP.md` — verified guide to setting up Auggie rules on a new machine. Corrects the wrong "create `AUGMENT.md`" answer Auggie gives when asked; real locations are `~/.augment/rules/*.md` (user, all projects), `~/.augment/user-guidelines.md`, and per-repo `.augment/rules/`.
+
+Still open / next session:
+- **Double-run guardrail (turn-scoped)** — the model can emit a duplicate identical tool call within one turn (observed: `git status` run twice). Design settled: suppress a duplicate identical command within the same agent turn; any new user message resets the scope so "check it again" always re-runs. Needs turn-awareness wired from the ACP session layer. Not built.
+- Still from Next Best Work: split `ChatWebviewProvider.ts`; action-card + changed-file parsing test seams; checkpoints/revert; large-history replay UX.
 
 ## Implemented So Far
 
@@ -603,8 +620,9 @@ Packaging smoke on 2026-07-05:
 3. Hardening before more UI surface:
    - Add a small test seam for action-card parsing.
    - Add a small test seam for changed-file snapshot parsing.
-   - Add a local MCP helper test verifying terminal aliases are advertised.
+   - DONE 2026-07-19 (`6a76254`): local MCP helper test verifying terminal aliases are advertised + match the callable set.
    - Add a regression smoke checklist for the terminal-routing contract after Auggie CLI updates.
+   - DONE 2026-07-19 (`bca0f37`): terminal routing now also backed by a bundled `--rules` file that steers Auggie to the visible terminal (stop-and-ask on fallback).
 4. Split `ChatWebviewProvider.ts` before continuing slash-menu/message-polish work:
    - changed-file/Git snapshot service
    - task snapshot persistence helpers
@@ -616,7 +634,7 @@ Packaging smoke on 2026-07-05:
    - checkpoint storage
    - restore/discard confirmation UX
 6. Lower-priority feature/polish:
-   - terminal output ANSI/OSC cleanup in action-card previews
+   - DONE 2026-07-19 (`931091f`): terminal output ANSI/OSC cleanup in action-card previews.
    - external/web action-card validation if Auggie exposes a web-style tool
    - Add terminal selection/output to Auggie
    - mode selector, indexing row, message styling, slash-menu polish
